@@ -16,7 +16,13 @@ EOF
 }
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-PROVIDER=all; VERSION=; ARCHIVE_URL=; EXPECTED_SHA256=; TARGET_INPUT=.
+# These defaults are injected into the release copy of this installer.  Keep
+# them empty in the checkout so local development never silently downloads a
+# remote payload.
+DEFAULT_VERSION=
+DEFAULT_ARCHIVE_URL=
+DEFAULT_SHA256=
+PROVIDER=all; VERSION=${AUTONOMOUS_DEV_TEAM_VERSION:-$DEFAULT_VERSION}; ARCHIVE_URL=${AUTONOMOUS_DEV_TEAM_ARCHIVE_URL:-$DEFAULT_ARCHIVE_URL}; EXPECTED_SHA256=${AUTONOMOUS_DEV_TEAM_SHA256:-$DEFAULT_SHA256}; TARGET_INPUT=.
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --provider) [ "$#" -ge 2 ] || die "--provider requires a value"; PROVIDER=$2; shift 2 ;;
