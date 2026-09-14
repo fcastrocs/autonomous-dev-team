@@ -4,7 +4,11 @@
 # Edit this file, then run `./sync.py` to regenerate provider-specific configs.
 # ==============================================================================
 
-active_provider = "all"  # "all" | "codex" | "claude" | "gemini"
+active_provider = "all"  # "all" | "codex" | "claude" | "gemini" | "antigravity"
+
+[schema]
+name = "autonomous-dev-team"
+version = 1
 
 # ==============================================================================
 # PROJECT INVARIANTS (Compiled into agent instructions to prevent hallucinations)

@@ -9,13 +9,13 @@ Designed to eliminate interactive tool runaways, redundant verification loops, a
 ## Key Features
 
 1. **Zero-Friction Bootstrap & Stack Auto-Detection**:
-   - Automatically detects your project's ecosystem (**Node.js**, **Python**, **Rust**, **Go**) and creates a tailored `config.toml` with real build commands, test selectors, and forbidden paths.
+   - Automatically detects your project's ecosystem (**Node.js**, **Python**, **Rust**, **Go**) and creates a tailored `.autonomous-dev-team.toml` with real build commands, test selectors, and forbidden paths.
    - Install into any project in 5 seconds with a single command.
-2. **Single Source of Truth (`config.toml`)**:
+2. **Single Source of Truth (`.autonomous-dev-team.toml`)**:
    - Define project invariants (subsystems, forbidden paths, build/test commands) in one place.
    - Configure model names and reasoning/thinking effort for each agent across providers without editing 8 different `.toml` or `.md` files.
 3. **Deterministic Compiler (`sync.py`)**:
-   - Zero-dependency Python script that compiles `config.toml` and `agents/*.md` into native configurations:
+   - Zero-dependency Python script that compiles `.autonomous-dev-team.toml` and `agents/*.md` into native configurations:
      - `.codex/config.toml` + `.codex/agents/*.toml` for OpenAI Codex.
      - `CLAUDE.md` for Anthropic Claude Code.
      - `AGENTS.md` and `GEMINI.md` for Google Gemini / Antigravity.
@@ -34,7 +34,7 @@ Designed to eliminate interactive tool runaways, redundant verification loops, a
 
 ```text
 .
-├── config.toml                # Central config: [project] invariants + models/reasoning per provider
+├── .autonomous-dev-team.toml # Central config: project invariants + provider models
 ├── sync.py                    # Compiles config.toml + agents/*.md into native provider files
 ├── install.sh                 # Bootstrap script to install this protocol into any repository
 ├── AGENTS.md                  # Antigravity protocol with compiled project guardrails
@@ -59,21 +59,21 @@ Designed to eliminate interactive tool runaways, redundant verification loops, a
 
 ## Quickstart: Installing into Any Project
 
-### Option A: From inside your target repository
-```bash
-/path/to/autonomous-dev-team/install.sh
-```
-`install.sh` automatically detects your project stack (Node, Python, Rust, Go), generates a tailored `config.toml`, and compiles all provider files.
+The canonical remote command is shown as a release template until this project publishes an installer URL and checksum; replace all three release values with those from the same published release:
 
-### Option B: Specifying the target path
 ```bash
-./install.sh /path/to/my-app
+curl -fsSL https://github.com/OWNER/autonomous-dev-team/releases/download/VERSION/install.sh | bash -s -- --version VERSION --archive-url https://github.com/OWNER/autonomous-dev-team/archive/refs/tags/VERSION.tar.gz --sha256 RELEASE_SHA256 /path/to/my-app
 ```
 
-Then inside your project:
-1. Open `config.toml` to review or customize settings (pre-filled with auto-detected commands).
-2. Run `./sync.py` anytime you update `config.toml` or prompt templates.
-3. Run `./sync.py --check` in your CI pipeline to ensure provider files remain synchronized.
+The version must appear in the HTTPS archive URL, and its SHA-256 is verified before extraction. The installer creates a missing target (including paths with spaces), stages one coherent `sync.py` + `agents/` payload, initializes zero-required-config defaults, compiles the requested providers, and runs `--check`. Reruns preserve `.autonomous-dev-team.toml` and unrelated files. It never interprets a project's ordinary `config.toml` as protocol configuration unless it carries the legacy protocol schema.
+
+For development from a local checkout (no network):
+
+```bash
+./install.sh --provider all "/path/to/my app"
+```
+
+Provider authentication is a prerequisite and remains owned by each provider CLI. Use `--provider codex`, `claude`, `gemini`, `antigravity` (alias `agy`), or `all`. After installation, edit `.autonomous-dev-team.toml`, run `./sync.py`, and use `./sync.py --check` in CI.
 
 ---
 
@@ -84,12 +84,17 @@ Then inside your project:
 - **Subagents**: Generated in `.codex/agents/*.toml` with individual models, reasoning levels, and compiled instructions.
 
 ### 2. Anthropic Claude Code
-- **Configuration**: Loaded automatically via `CLAUDE.md`.
-- **Persona Guidance**: Detailed execution protocols instructing Claude Code to inspect `agents/<name>.md` and apply circuit breakers when assuming specialist roles.
+- **Artifacts**: `CLAUDE.md` plus `.claude/agents/*.md` specialist definitions.
+- **Limitation**: The protocol supplies instructions and personas; tool availability and subagent execution are controlled by the installed Claude Code version.
 - **Communication Contracts**: Discovery Manifest, Compact Dispatch Contract, and Completion Contract formats are embedded for structured output.
 
-### 3. Google Gemini / Antigravity (`agy`)
-- **Configuration**: Loaded automatically via `AGENTS.md` and `GEMINI.md`.
+### 3. Google Gemini
+- **Artifacts**: `GEMINI.md` and `.gemini/settings.json`.
+- **Limitation**: The settings select the context filename; supported tools and delegation remain Gemini CLI capabilities.
+
+### 4. Antigravity (`agy` alias)
+- **Artifact**: `AGENTS.md` with a conservative provider-native dispatch contract.
+- **Limitation**: Agent invocation is guidance, not an authentication or tool installer.
 - **Antigravity Subagent Dispatch Protocol**:
   ```python
   invoke_subagent(
@@ -104,10 +109,10 @@ Then inside your project:
 
 ## Configuring Models & Reasoning
 
-Change model versions, reasoning effort, or active providers in `config.toml`:
+Change model versions, reasoning effort, or active providers in `.autonomous-dev-team.toml`:
 
 ```toml
-active_provider = "all"  # "all" | "codex" | "claude" | "gemini"
+active_provider = "all"  # also: "codex", "claude", "gemini", "antigravity" / "agy"
 
 [codex.orchestrator]
 model = "gpt-5.6-terra"
@@ -132,7 +137,7 @@ model = "pro"
 model = "pro"
 ```
 
-After modifying `config.toml`, execute:
+After modifying `.autonomous-dev-team.toml`, execute:
 ```bash
 ./sync.py
 ```
