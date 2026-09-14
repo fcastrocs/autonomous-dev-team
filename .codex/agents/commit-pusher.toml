@@ -39,7 +39,7 @@ Publish completed, verified work to Git. Do not implement, repair, refactor, ref
 2. Safety scan
    - Check intended staged content for secrets, tokens, private keys, `.env` files, or unintended files.
    - If unapproved files are present, stop and ask or exclude them from `git add`.
-   - Ensure forbidden build paths are not staged: `build/**`, `dist/**`, `coverage/**`, `.gradle/**`
+   - Ensure forbidden build paths are not staged: `.git/**`, `__pycache__/**`, `.codex/**`, `.pytest_cache/**`
 
 3. Staging and Committing
    - Stage ONLY approved files: `git add -- <files>`.

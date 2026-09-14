@@ -16,36 +16,24 @@ description = "Multi-provider autonomous agent protocol and configuration engine
 # Paths that agents are strictly forbidden from editing, copying, or diffing directly.
 # Agents are instructed to exclude these from file searches and never propose edits to them.
 forbidden_paths = [
-  "build/**",
-  "dist/**",
-  "coverage/**",
-  ".gradle/**"
+  ".git/**",
+  "__pycache__/**",
+  ".codex/**",
+  ".pytest_cache/**"
 ]
 
 # Command to deterministically synchronize/build generated assets (replaces LLM asset editing).
-build_sync_cmd = "npm run build"
+build_sync_cmd = "python3 sync.py"
 
 # Focused unit test command template.
 # Agents interpolate {file} or {test_name} for narrow verification before handoff.
-focused_test_cmd = "npm test -- {file}"
+focused_test_cmd = "python3 -m unittest tests/test_sync.py"
 
 # Broad verification suite command executed ONLY by code-validator when new risk is introduced.
-full_test_cmd = "npm run test:integration"
+full_test_cmd = "python3 -m unittest discover tests"
 
 # Build / compilation verification command (owned by code-validator).
-build_cmd = "npm run build"
-
-# Subsystems to enforce strict architectural isolation.
-# Implementer and planner will refuse to mix disjoint subsystems in a single slice.
-[[project.subsystems]]
-name = "core"
-path = "src/core/"
-stack = "TypeScript / Node"
-
-[[project.subsystems]]
-name = "ui"
-path = "src/ui/"
-stack = "React / CSS"
+build_cmd = "python3 sync.py --check"
 
 
 # ==============================================================================
@@ -137,7 +125,7 @@ thinking = "none"
 
 # ==============================================================================
 # GOOGLE / GEMINI (ANTIGRAVITY / AGY) CONFIGURATION
-# Generates AGENTS.md with subagent tier enums (inherit, flash, flash_lite, pro)
+# Generates AGENTS.md & GEMINI.md with subagent tier enums (inherit, flash, flash_lite, pro)
 # ==============================================================================
 [gemini.orchestrator]
 model = "pro"

@@ -20,14 +20,12 @@ You turn the user's goal and verified repository evidence into an implementation
 - **Hard reassessment:** 15 tool calls. If you cannot produce a complete plan within narrow reads, immediately return `NEEDS_EXPLORATION` so the orchestrator can assign `code-explorer`.
 
 ## Repository Invariants & Prohibitions
-- **Subsystem Boundaries**: `core` (src/core/ — TypeScript / Node), `ui` (src/ui/ — React / CSS)
-  * *Isolation Rule*: Never combine disjoint subsystems in one implementation slice.
-- **Forbidden Build/Generated Paths**: `build/**`, `dist/**`, `coverage/**`, `.gradle/**`
+- **Forbidden Build/Generated Paths**: `.git/**`, `__pycache__/**`, `.codex/**`, `.pytest_cache/**`
   * *Rule*: Strictly forbidden from manually editing, copying, diffing, or staging these paths.
-- **Deterministic Build Sync**: `npm run build` (Automated build command; never spawn an agent to manually patch build artifacts).
-- **Focused Unit Verification**: `npm test -- {file}` (Implementer must execute narrow tests to green before handoff).
-- **Validation Suite**: `npm run test:integration` (Independent broader verification owned by code-validator).
-- **Build / Package Verification**: `npm run build` (Owned by code-validator).
+- **Deterministic Build Sync**: `python3 sync.py` (Automated build command; never spawn an agent to manually patch build artifacts).
+- **Focused Unit Verification**: `python3 -m unittest tests/test_sync.py` (Implementer must execute narrow tests to green before handoff).
+- **Validation Suite**: `python3 -m unittest discover tests` (Independent broader verification owned by code-validator).
+- **Build / Package Verification**: `python3 sync.py --check` (Owned by code-validator).
 
 ## Cohesive Slicing Policy (Crucial Anti-Fragmentation Rule)
 - **Contract-Oriented Slicing:** A slice must own a complete behavioral seam (e.g. state management + card rendering + settings UI; or API client + endpoint handler + persistence model).
@@ -38,8 +36,8 @@ You turn the user's goal and verified repository evidence into an implementation
 - **Strictly Prohibited:**
   * NEVER create file-by-file micro-slices (e.g., Agent 1 changes function A, Agent 2 changes function B, Agent 3 changes markup, Agent 4 adjusts tests).
   * NEVER create separate slices for tightly coupled state + consumer files.
-  * NEVER propose separate subagent slices for copying or syncing generated build assets. That is an automated build task (`npm run build`).
-  * NEVER mix disjoint subsystems in one slice: Never combine core vs ui in a single implementation slice unless verifying an explicit cross-stack contract test.
+  * NEVER propose separate subagent slices for copying or syncing generated build assets. That is an automated build task (`python3 sync.py`).
+  * NEVER mix disjoint subsystems in one slice: Never combine different subsystems in a single implementation slice unless verifying an explicit cross-stack contract test.
 
 ## Workflow
 1. Establish the goal
@@ -56,8 +54,8 @@ You turn the user's goal and verified repository evidence into an implementation
    - State which slices may safely run in parallel (only if workstreams are genuinely independent).
 
 4. Define validation & review gates
-   - Specify focused unit tests that the implementer must execute: `npm test -- {file}`.
-   - Specify `code-validator` scope ONLY when independent builds or broader integration tests are warranted (`npm run test:integration`). Do not duplicate implementer unit tests.
+   - Specify focused unit tests that the implementer must execute: `python3 -m unittest tests/test_sync.py`.
+   - Specify `code-validator` scope ONLY when independent builds or broader integration tests are warranted (`python3 -m unittest discover tests`). Do not duplicate implementer unit tests.
    - Specify `code-reviewer` only if the change affects public contracts, lifecycle/concurrency, or security.
 
 ## If More Exploration Is Required

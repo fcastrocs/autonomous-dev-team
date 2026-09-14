@@ -13,14 +13,12 @@ Multi-provider autonomous agent protocol and configuration engine for Codex, Cla
 ---
 
 ## 1. Repository Invariants & Safety Guardrails
-- **Subsystem Boundaries**: `core` (src/core/ — TypeScript / Node), `ui` (src/ui/ — React / CSS)
-  * *Isolation Rule*: Never combine disjoint subsystems in one implementation slice.
-- **Forbidden Build/Generated Paths**: `build/**`, `dist/**`, `coverage/**`, `.gradle/**`
+- **Forbidden Build/Generated Paths**: `.git/**`, `__pycache__/**`, `.codex/**`, `.pytest_cache/**`
   * *Rule*: Strictly forbidden from manually editing, copying, diffing, or staging these paths.
-- **Deterministic Build Sync**: `npm run build` (Automated build command; never spawn an agent to manually patch build artifacts).
-- **Focused Unit Verification**: `npm test -- {file}` (Implementer must execute narrow tests to green before handoff).
-- **Validation Suite**: `npm run test:integration` (Independent broader verification owned by code-validator).
-- **Build / Package Verification**: `npm run build` (Owned by code-validator).
+- **Deterministic Build Sync**: `python3 sync.py` (Automated build command; never spawn an agent to manually patch build artifacts).
+- **Focused Unit Verification**: `python3 -m unittest tests/test_sync.py` (Implementer must execute narrow tests to green before handoff).
+- **Validation Suite**: `python3 -m unittest discover tests` (Independent broader verification owned by code-validator).
+- **Build / Package Verification**: `python3 sync.py --check` (Owned by code-validator).
 
 ### Output & Command Bounding Invariants:
 - Limit file reads (`sed -n`) to ≤60 lines.
@@ -36,6 +34,31 @@ Before executing, classify every task into one of four tiers:
 - **Tier 1 (Surgical Change)**: 1 file or localized edit, typo, simple helper → execute surgical edit + narrow test.
 - **Tier 2 (Cohesive Feature / Localized Bug)**: 1–3 tightly coupled files in a single subsystem → implementer owns complete behavioral seam + focused unit tests.
 - **Tier 3 (Cross-Subsystem / Architectural Change)**: Multi-subsystem, lifecycle changes, boundary redesign → plan cohesive slices first, implement sequentially or cleanly partitioned, validate independently.
+
+```
+                                 TASK INTAKE
+                                      │
+          ┌───────────────────────────┼───────────────────────────┐
+          ▼                           ▼                           ▼
+    [ Tier 0/1 ]                 [ Tier 2 ]                  [ Tier 3 ]
+  Direct / Surgical          Cohesive Feature            Cross-Subsystem
+          │                           │                           │
+  Direct Operation                    │                  code-explorer
+         OR              Known Cause? ├── Yes ──► implementer   (targeted)
+  quick-implementer                   │                │          │
+  (focused check)                     └── No ──► code-explorer   planner
+          │                                            │     (1–3 slices)
+          │                                       implementer     │
+          │                                            │     implementer(s)
+          │                                     reviewer (risky)  │
+          │                                            │     validator
+          │                                            │     (build/integration)
+          │                                            │          │
+          │                                            │     reviewer (risky)
+          └───────────────────────────┬───────────────────────────┘
+                                      ▼
+                                   COMPLETE
+```
 
 ---
 
@@ -55,7 +78,83 @@ When assuming specialist personas or delegating subtasks, adhere to the assigned
 
 ---
 
-## 4. Contract-Oriented Cohesive Slicing
+## 4. Specialist Persona Execution Guidelines
+Detailed operational rules, fit checks, and circuit breakers for each specialist are maintained in `agents/<name>.md`:
+- `agents/code-explorer.md` — Read-only scout; produces structured Discovery Manifests.
+- `agents/planner.md` — Contract-oriented slicer (1–3 slices); enforces anti-micro-slicing.
+- `agents/implementer.md` — Primary implementer; owns cohesive behavioral seam + unit tests to green.
+- `agents/quick-implementer.md` — Low-cost surgical implementer for small, single-file edits.
+- `agents/code-validator.md` — Independent runner for broad builds and integration suites (`python3 -m unittest discover tests`).
+- `agents/code-reviewer.md` — Senior reviewer for semantic risks (lifecycle, concurrency, security).
+- `agents/commit-pusher.md` — Safe deterministic non-interactive Git publisher.
+
+When executing as a specialist persona, inspect and adhere strictly to the corresponding template in `agents/`.
+
+---
+
+## 5. Contract-Oriented Cohesive Slicing
 - A slice MUST own a complete behavioral contract (state manager + consumer + tests; or client + handler + types).
 - NEVER micro-slice by individual functions or separate tests from code.
 - Target: 1 slice for localized fixes; 2 slices for moderate features; max 3 slices for separable workstreams.
+
+---
+
+## Inter-Agent Communication Contracts
+
+### A. Discovery Manifest (`code-explorer` → `/root` / `planner` / `implementer`)
+```markdown
+## Discovery Manifest
+### Root Cause: <concise verified explanation>
+### Relevant Files:
+- `path/to/file` — symbol/function — why relevant
+### Execution / Data Flow:
+1. <entry / event> -> 2. <state mutation> -> 3. <consumer / render>
+### Verified Facts:
+- <concrete fact 1>
+### Uncertainties: None | <specific detail>
+### Recommended Ownership Boundary: <files that must stay in ONE implementation slice>
+### Suggested Verification: <exact focused test command>
+```
+
+### B. Compact Dispatch Contract (`/root` → Subagent)
+```markdown
+## Assignment
+**Goal:** <one sentence>
+**Why:** <one or two sentences context>
+**Scope:** `path/to/file-a`, `path/to/file-b`
+**Relevant symbols:** `symbolA`, `symbolB`
+**Verified facts:** <from explorer or previous turn>
+**Constraints:** <e.g. preserve dirty worktree, subsystem isolation>
+**Required behavior:** <concrete expected result>
+**Verification responsibility:** `<exact command the agent must execute>`
+**Do not do:** <explicit non-goals>
+```
+
+### C. Compact Completion Contract (Subagent → `/root`)
+```markdown
+## Completion
+**Status:** PASS | FAIL | BLOCKED
+**Changed:**
+- `path/to/file`: <short description>
+**Behavior:** <what now works>
+**Verification:** `<command>` — PASS / FAIL
+**Remaining risk:** None | <one concise item>
+**Follow-up needed:** No | <exact next action>
+```
+
+### D. Repair Request Packet (`/root` → Original Implementer)
+```markdown
+## Repair Request
+**Original goal:** ...
+**Observed failure:** ...
+**Exact evidence:** failing command, exit code, error excerpt
+**Changed files from previous attempt:** `path/to/file`
+**Known-good facts:** ...
+**Scope:** Repair the existing implementation. Do not restart architectural exploration.
+```
+
+---
+
+## 6. Validation & Review Policies
+- **Validate New Risk, Not Re-Run Proof**: If the implementer verified focused unit tests to green, DO NOT re-run that identical command in `code-validator`. `code-validator` runs ONLY broader suites (`python3 -m unittest discover tests`) or builds (`python3 sync.py --check`).
+- **Risk-Based Review**: Invoke `code-reviewer` only for semantic risk (state machine, concurrency, boundaries, security, storage migrations, public contracts). Skip for pure DOM/CSS, presentation, formatting, or low-risk mechanical changes.

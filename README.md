@@ -8,16 +8,20 @@ Designed to eliminate interactive tool runaways, redundant verification loops, a
 
 ## Key Features
 
-1. **Single Source of Truth (`config.toml`)**:
+1. **Zero-Friction Bootstrap & Stack Auto-Detection**:
+   - Automatically detects your project's ecosystem (**Node.js**, **Python**, **Rust**, **Go**) and creates a tailored `config.toml` with real build commands, test selectors, and forbidden paths.
+   - Install into any project in 5 seconds with a single command.
+2. **Single Source of Truth (`config.toml`)**:
    - Define project invariants (subsystems, forbidden paths, build/test commands) in one place.
    - Configure model names and reasoning/thinking effort for each agent across providers without editing 8 different `.toml` or `.md` files.
-2. **Deterministic Compiler (`sync.py`)**:
+3. **Deterministic Compiler (`sync.py`)**:
    - Zero-dependency Python script that compiles `config.toml` and `agents/*.md` into native configurations:
      - `.codex/config.toml` + `.codex/agents/*.toml` for OpenAI Codex.
      - `CLAUDE.md` for Anthropic Claude Code.
-     - `AGENTS.md` for Google Gemini / Antigravity.
-   - Injects project safety invariants directly into agent system instructions to prevent hallucinations and build breaks.
-3. **Core Operational Invariants**:
+     - `AGENTS.md` and `GEMINI.md` for Google Gemini / Antigravity.
+   - Injects project safety invariants and 4-tier routing instructions directly into orchestrator and agent instructions.
+   - Built-in `--check` flag for CI and pre-commit validation.
+4. **Core Operational Invariants**:
    - **Zero Full-History Forks (`fork_turns = "none"`)**: Dispatches subagents with compact contracts (≤ 1,500 tokens) instead of duplicating parent history.
    - **Anti-Polling**: Eliminates busy-polling loops in favor of reactive wakeups.
    - **Cohesive Slicing**: Bounded 1–3 contract seams; strictly forbids file-by-file micro-slicing.
@@ -33,43 +37,68 @@ Designed to eliminate interactive tool runaways, redundant verification loops, a
 ├── config.toml                # Central config: [project] invariants + models/reasoning per provider
 ├── sync.py                    # Compiles config.toml + agents/*.md into native provider files
 ├── install.sh                 # Bootstrap script to install this protocol into any repository
-├── AGENTS.md                  # Canonical protocol with compiled project guardrails
+├── AGENTS.md                  # Antigravity protocol with compiled project guardrails
+├── GEMINI.md                  # Gemini assistant rules mirror
 ├── CLAUDE.md                  # Claude Code protocol with compiled project guardrails
 ├── .codex/                    # Generated Codex configurations
-│   ├── config.toml
-│   └── agents/*.toml
-└── agents/                    # Specialist persona prompt templates
-    ├── code-explorer.md       # Read-only scout; produces structured Discovery Manifests
-    ├── planner.md             # Tier 3 contract-oriented slicer; enforces anti-micro-slicing
-    ├── implementer.md         # Cohesive seam owner; verifies focused unit tests to green
-    ├── quick-implementer.md   # Low-cost surgical implementer for small single-file edits
-    ├── code-validator.md      # Independent runner for broad builds and integration tests
-    ├── code-reviewer.md       # Senior reviewer for semantic risks (lifecycle, concurrency, security)
-    └── commit-pusher.md       # Safe deterministic non-interactive Git publisher
+│   ├── config.toml            # Root orchestrator developer instructions & agent registry
+│   └── agents/*.toml          # Specialist agent configurations with compiled instructions
+├── agents/                    # Specialist persona prompt templates
+│   ├── code-explorer.md       # Read-only scout; produces structured Discovery Manifests
+│   ├── planner.md             # Tier 3 contract-oriented slicer; enforces anti-micro-slicing
+│   ├── implementer.md         # Cohesive seam owner; verifies focused unit tests to green
+│   ├── quick-implementer.md   # Low-cost surgical implementer for small single-file edits
+│   ├── code-validator.md      # Independent runner for broad builds and integration tests
+│   ├── code-reviewer.md       # Senior reviewer for semantic risks (lifecycle, concurrency, security)
+│   └── commit-pusher.md       # Safe deterministic non-interactive Git publisher
+└── tests/
+    └── test_sync.py           # Unit tests verifying compiler and stack detection
 ```
 
 ---
 
-## Quickstart: Installing into Another Project
+## Quickstart: Installing into Any Project
 
-To equip any project (e.g. `../my-app`) with this multi-agent setup:
+### Option A: From inside your target repository
+```bash
+/path/to/autonomous-dev-team/install.sh
+```
+`install.sh` automatically detects your project stack (Node, Python, Rust, Go), generates a tailored `config.toml`, and compiles all provider files.
 
+### Option B: Specifying the target path
 ```bash
 ./install.sh /path/to/my-app
 ```
 
 Then inside your project:
-1. Open `config.toml` and define your project's invariants:
-   ```toml
-   [project]
-   name = "my-app"
-   description = "Backend REST API in Node/Express"
-   forbidden_paths = ["dist/**", "coverage/**"]
-   build_sync_cmd = "npm run build"
-   focused_test_cmd = "npm test -- {file}"
-   full_test_cmd = "npm run test:integration"
-   ```
-2. Run `./sync.py` to compile the configurations into `.codex/`, `CLAUDE.md`, and `AGENTS.md`.
+1. Open `config.toml` to review or customize settings (pre-filled with auto-detected commands).
+2. Run `./sync.py` anytime you update `config.toml` or prompt templates.
+3. Run `./sync.py --check` in your CI pipeline to ensure provider files remain synchronized.
+
+---
+
+## Provider Compatibility Details
+
+### 1. OpenAI Codex
+- **Root Orchestrator**: Configured in `.codex/config.toml` with `developer_instructions` covering token limits, project guardrails, Tier 0–3 routing, and dispatch contracts.
+- **Subagents**: Generated in `.codex/agents/*.toml` with individual models, reasoning levels, and compiled instructions.
+
+### 2. Anthropic Claude Code
+- **Configuration**: Loaded automatically via `CLAUDE.md`.
+- **Persona Guidance**: Detailed execution protocols instructing Claude Code to inspect `agents/<name>.md` and apply circuit breakers when assuming specialist roles.
+- **Communication Contracts**: Discovery Manifest, Compact Dispatch Contract, and Completion Contract formats are embedded for structured output.
+
+### 3. Google Gemini / Antigravity (`agy`)
+- **Configuration**: Loaded automatically via `AGENTS.md` and `GEMINI.md`.
+- **Antigravity Subagent Dispatch Protocol**:
+  ```python
+  invoke_subagent(
+      TypeName="self",         # or "research" for read-only exploration
+      Role="code-explorer",    # specialist role name
+      Model="flash",           # "flash" for scouts/validators, "pro" for implementer/planner
+      Prompt="<Compact Dispatch Contract + agents/<role>.md>"
+  )
+  ```
 
 ---
 
