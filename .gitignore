@@ -25,7 +25,6 @@ test-app/
 AGENTS.md
 CLAUDE.md
 GEMINI.md
-.codex/config.toml
-.codex/agents/
-.claude/agents/
-.gemini/settings.json
+.codex
+.claude
+.gemini
