@@ -226,7 +226,8 @@ class TestSyncCompiler(unittest.TestCase):
     def test_native_provider_outputs_and_codex_hierarchy(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         codex = outputs[BASE_DIR / ".codex" / "config.toml"]
-        self.assertRegex(codex, r"(?s)\[agents\].*max_threads = 3.*\[agents\.code-explorer\]")
+        self.assertIn("[agents.code-explorer]", codex)
+        self.assertNotIn("[agents]\n", codex)
         claude_agent = outputs[BASE_DIR / ".claude" / "agents" / "implementer.md"]
         self.assertTrue(claude_agent.startswith("---\nname: implementer\n"))
         settings = json.loads(outputs[BASE_DIR / ".gemini" / "settings.json"])

@@ -298,11 +298,6 @@ Always dispatch subagents with this exact Compact Dispatch Contract:
         "",
         "[features]",
         "multi_agent = true",
-        "",
-        "[agents]",
-        f'default_model = "{orch.get("default_subagent_model", "gpt-5.6-luna")}"',
-        f'default_model_reasoning_effort = "{orch.get("default_subagent_reasoning_effort", "low")}"',
-        f'max_threads = {orch.get("max_concurrent_threads_per_session", 3)}',
         ""
     ]
     
@@ -707,9 +702,6 @@ build_cmd = "{stack_info.get('build_cmd', '')}"
 model = "gpt-5.6-terra"
 reasoning_effort = "low"
 plan_mode_reasoning_effort = "medium"
-default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "low"
-max_concurrent_threads_per_session = 3
 tool_output_token_limit = 2500
 model_auto_compact_token_limit = 45000
 
