@@ -4,22 +4,27 @@ Autonomous Dev Team adds a practical multi-agent workflow to Codex, Claude Code,
 
 ## Install
 
-From the root of the repository you want to set up, run:
+Once a release has been published, from the root of the repository you want to set up, run:
 
 ```bash
-git clone --depth 1 https://github.com/fcastrocs/autonomous-dev-team.git /tmp/autonomous-dev-team
-/tmp/autonomous-dev-team/install.sh
+curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.sh | bash
 ```
 
-That installs support for every provider and uses the current directory as the target. To install only one provider, add `--provider`:
+That installs support for every provider into the current directory. To install only one provider, add `--provider`:
 
 ```bash
-/tmp/autonomous-dev-team/install.sh --provider codex
+curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.sh | bash -s -- --provider codex
 ```
 
 Supported values are `codex`, `claude`, `gemini`, `antigravity` (or `agy`), and `all`.
 
 The installer preserves your existing project files and configuration. You still need to authenticate the relevant provider CLI yourself.
+
+If you are developing this repository before publishing a release, use the local installer instead:
+
+```bash
+./install.sh
+```
 
 ## Set up your project
 
@@ -88,7 +93,7 @@ To publish a release (GitHub CLI authentication required):
 ./release.sh v1.0.0
 ```
 
-The command requires a clean checkout, tags and pushes the version, and publishes a checksum-pinned installer plus its matching payload. Users can then install from inside their project with the one-line command printed by the release script.
+The command requires a clean checkout, tags and pushes the version, and publishes a checksum-pinned installer plus its matching payload. After it succeeds, the installation commands above are available.
 
 ## License
 
