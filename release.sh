@@ -2,7 +2,6 @@
 
 set -euo pipefail
 
-VERSION=${1:-}
 REPOSITORY="fcastrocs/autonomous-dev-team"
 
 fail() {
@@ -10,8 +9,8 @@ fail() {
   exit 1
 }
 
-if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-  fail "usage: ./release.sh vMAJOR.MINOR.PATCH"
+if [[ $# -ne 0 ]]; then
+  fail "usage: ./release.sh"
 fi
 
 if [[ -n $(git status --porcelain) ]]; then
@@ -22,8 +21,32 @@ if [[ ! -f install.sh || ! -f sync.py || ! -d agents ]]; then
 fi
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required"
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI (gh) must be authenticated"
-if git show-ref --verify --quiet "refs/tags/$VERSION"; then
-  fail "tag $VERSION already exists"
+
+CURRENT_VERSION=$( {
+  git tag -l
+  git ls-remote --tags --refs origin 'v*' | awk '{sub("refs/tags/", "", $2); print $2}'
+} | awk '
+  /^v[0-9]+\.[0-9]+\.[0-9]+$/ {
+    version = substr($0, 2)
+    split(version, parts, ".")
+    major = parts[1] + 0
+    minor = parts[2] + 0
+    patch = parts[3] + 0
+    if (!found || major > best_major || (major == best_major && minor > best_minor) || (major == best_major && minor == best_minor && patch > best_patch)) {
+      best_major = major
+      best_minor = minor
+      best_patch = patch
+      found = 1
+    }
+  }
+  END { if (found) printf "%d.%d.%d", best_major, best_minor, best_patch }
+')
+
+if [[ -z $CURRENT_VERSION ]]; then
+  VERSION=v0.0.1
+else
+  IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+  VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
 fi
 
 RELEASE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/autonomous-dev-team-release.XXXXXX")

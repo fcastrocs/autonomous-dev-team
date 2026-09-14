@@ -90,10 +90,10 @@ python3 -m unittest tests/test_sync.py
 To publish a release (GitHub CLI authentication required):
 
 ```bash
-./release.sh v1.0.0
+./release.sh
 ```
 
-The command requires a clean checkout, tags and pushes the version, and publishes a checksum-pinned installer plus its matching payload. After it succeeds, the installation commands above are available.
+The command requires a clean checkout, finds the latest `vMAJOR.MINOR.PATCH` tag (local or on `origin`), and bumps its patch version. With no existing release it starts at `v0.0.1`. It then tags and pushes that version and publishes a checksum-pinned installer plus its matching payload. After it succeeds, the installation commands above are available.
 
 ## License
 
