@@ -1,0 +1,165 @@
+# ==============================================================================
+# AUTONOMOUS AGENT PROTOCOL CONFIGURATION
+# Single source of truth for repository invariants and multi-provider models.
+# Edit this file, then run `./sync.py` to regenerate provider-specific configs.
+# ==============================================================================
+
+active_provider = "all"  # "all" | "codex" | "claude" | "gemini"
+
+# ==============================================================================
+# PROJECT INVARIANTS (Compiled into agent instructions to prevent hallucinations)
+# ==============================================================================
+[project]
+name = "autonomous-dev-team"
+description = "Multi-provider autonomous agent protocol and configuration engine for Codex, Claude Code, and Gemini"
+
+# Paths that agents are strictly forbidden from editing, copying, or diffing directly.
+# Agents are instructed to exclude these from file searches and never propose edits to them.
+forbidden_paths = [
+  "build/**",
+  "dist/**",
+  "coverage/**",
+  ".gradle/**"
+]
+
+# Command to deterministically synchronize/build generated assets (replaces LLM asset editing).
+build_sync_cmd = "npm run build"
+
+# Focused unit test command template.
+# Agents interpolate {file} or {test_name} for narrow verification before handoff.
+focused_test_cmd = "npm test -- {file}"
+
+# Broad verification suite command executed ONLY by code-validator when new risk is introduced.
+full_test_cmd = "npm run test:integration"
+
+# Build / compilation verification command (owned by code-validator).
+build_cmd = "npm run build"
+
+# Subsystems to enforce strict architectural isolation.
+# Implementer and planner will refuse to mix disjoint subsystems in a single slice.
+[[project.subsystems]]
+name = "core"
+path = "src/core/"
+stack = "TypeScript / Node"
+
+[[project.subsystems]]
+name = "ui"
+path = "src/ui/"
+stack = "React / CSS"
+
+
+# ==============================================================================
+# OPENAI / CODEX CONFIGURATION
+# Generates .codex/config.toml and .codex/agents/*.toml
+# ==============================================================================
+[codex.orchestrator]
+model = "gpt-5.6-terra"
+reasoning_effort = "low"
+plan_mode_reasoning_effort = "medium"
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "low"
+max_concurrent_threads_per_session = 3
+tool_output_token_limit = 2500
+model_auto_compact_token_limit = 45000
+
+[codex.agents.code-explorer]
+description = "Read-only repository scout for targeted discovery, producing structured Discovery Manifests."
+model = "gpt-5.6-luna"
+reasoning_effort = "low"
+
+[codex.agents.planner]
+description = "Repository-grounded engineering planner used ONLY for Tier 3 complex, architectural, or multi-subsystem changes."
+model = "gpt-5.6-sol"
+reasoning_effort = "low"
+
+[codex.agents.quick-implementer]
+description = "Low-cost surgical implementer for small, mechanical, single-file, low-risk edits."
+model = "gpt-5.6-luna"
+reasoning_effort = "low"
+
+[codex.agents.implementer]
+description = "Primary implementer for substantive features, owning complete behavioral seams and verifying unit tests to green."
+model = "gpt-5.6-sol"
+reasoning_effort = "low"
+
+[codex.agents.code-validator]
+description = "Independent verification runner for broad builds, integration suites, and cross-module checks. Validates new risk."
+model = "gpt-5.6-luna"
+reasoning_effort = "low"
+
+[codex.agents.code-reviewer]
+description = "Independent senior reviewer for high-risk diffs (lifecycle, concurrency, native bridges, public contracts, security)."
+model = "gpt-5.6-terra"
+reasoning_effort = "low"
+
+[codex.agents.commit-pusher]
+description = "Deterministic Git publishing agent used only after an explicit user request. Non-interactive path staging."
+model = "gpt-5.6-luna"
+reasoning_effort = "low"
+
+
+# ==============================================================================
+# ANTHROPIC / CLAUDE CODE CONFIGURATION
+# Generates CLAUDE.md with project guardrails and model routing guidance
+# ==============================================================================
+[claude.orchestrator]
+model = "claude-3-7-sonnet"
+thinking = "low"
+
+[claude.agents.code-explorer]
+model = "claude-3-5-haiku"
+thinking = "none"
+
+[claude.agents.planner]
+model = "claude-3-7-sonnet"
+thinking = "high"
+
+[claude.agents.quick-implementer]
+model = "claude-3-5-haiku"
+thinking = "none"
+
+[claude.agents.implementer]
+model = "claude-3-7-sonnet"
+thinking = "medium"
+
+[claude.agents.code-validator]
+model = "claude-3-5-haiku"
+thinking = "none"
+
+[claude.agents.code-reviewer]
+model = "claude-3-7-sonnet"
+thinking = "high"
+
+[claude.agents.commit-pusher]
+model = "claude-3-5-haiku"
+thinking = "none"
+
+
+# ==============================================================================
+# GOOGLE / GEMINI (ANTIGRAVITY / AGY) CONFIGURATION
+# Generates AGENTS.md with subagent tier enums (inherit, flash, flash_lite, pro)
+# ==============================================================================
+[gemini.orchestrator]
+model = "pro"
+reasoning = "low"
+
+[gemini.agents.code-explorer]
+model = "flash"
+
+[gemini.agents.planner]
+model = "pro"
+
+[gemini.agents.quick-implementer]
+model = "flash"
+
+[gemini.agents.implementer]
+model = "pro"
+
+[gemini.agents.code-validator]
+model = "flash"
+
+[gemini.agents.code-reviewer]
+model = "pro"
+
+[gemini.agents.commit-pusher]
+model = "flash"
