@@ -14,11 +14,14 @@ check: ## Verify provider configurations are in sync
 team: ## Display active provider and team roster
 	python3 sync.py --team
 
-test: ## Run the entire test discovery suite
+test: ## Run focused unit tests
+	python3 -m unittest tests/test_sync.py
+
+test-all: ## Run the entire test discovery suite
 	python3 -m unittest discover tests
 
-install: ## Install dev team into current directory
-	python3 install.py
+install: ## Install dev team into target directory (usage: make install TARGET=/path/to/project)
+	python3 install.py $(TARGET)
 
-release: ## Cut and publish a new release
-	./release.sh
+release: ## Cut and publish a new release (usage: make release [VERSION=vX.Y.Z])
+	./release.sh $(VERSION)

@@ -9,8 +9,8 @@ fail() {
   exit 1
 }
 
-if [[ $# -ne 0 ]]; then
-  fail "usage: ./release.sh"
+if [[ $# -gt 1 ]]; then
+  fail "usage: ./release.sh [version]"
 fi
 
 if [[ -n $(git status --porcelain) ]]; then
@@ -22,31 +22,49 @@ fi
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required"
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI (gh) must be authenticated"
 
-CURRENT_VERSION=$( {
-  git tag -l
-  git ls-remote --tags --refs origin 'v*' | awk '{sub("refs/tags/", "", $2); print $2}'
-} | awk '
-  /^v[0-9]+\.[0-9]+\.[0-9]+$/ {
-    version = substr($0, 2)
-    split(version, parts, ".")
-    major = parts[1] + 0
-    minor = parts[2] + 0
-    patch = parts[3] + 0
-    if (!found || major > best_major || (major == best_major && minor > best_minor) || (major == best_major && minor == best_minor && patch > best_patch)) {
-      best_major = major
-      best_minor = minor
-      best_patch = patch
-      found = 1
-    }
-  }
-  END { if (found) printf "%d.%d.%d", best_major, best_minor, best_patch }
-')
+python3 sync.py --check || fail "provider files are out of sync; run 'python3 sync.py' first"
+python3 -m unittest discover tests || fail "test suite failed; fix tests before releasing"
 
-if [[ -z $CURRENT_VERSION ]]; then
-  VERSION=v0.0.1
+if [[ $# -eq 1 ]]; then
+  VERSION="$1"
+  [[ $VERSION == v* ]] || VERSION="v$VERSION"
+  if ! [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    fail "version must follow semantic versioning (e.g. v0.1.0 or 0.1.0)"
+  fi
 else
-  IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-  VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
+  CURRENT_VERSION=$( {
+    git tag -l
+    git ls-remote --tags --refs origin 'v*' | awk '{sub("refs/tags/", "", $2); print $2}'
+  } | awk '
+    /^v[0-9]+\.[0-9]+\.[0-9]+$/ {
+      version = substr($0, 2)
+      split(version, parts, ".")
+      major = parts[1] + 0
+      minor = parts[2] + 0
+      patch = parts[3] + 0
+      if (!found || major > best_major || (major == best_major && minor > best_minor) || (major == best_major && minor == best_minor && patch > best_patch)) {
+        best_major = major
+        best_minor = minor
+        best_patch = patch
+        found = 1
+      }
+    }
+    END { if (found) printf "%d.%d.%d", best_major, best_minor, best_patch }
+  ')
+
+  if [[ -z $CURRENT_VERSION ]]; then
+    VERSION=v0.1.0
+  else
+    IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+    VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
+  fi
+fi
+
+if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+  fail "tag $VERSION already exists locally"
+fi
+if git ls-remote --tags --refs origin "refs/tags/$VERSION" 2>/dev/null | grep -q "$VERSION"; then
+  fail "tag $VERSION already exists on origin"
 fi
 
 RELEASE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/autonomous-dev-team-release.XXXXXX")
@@ -78,7 +96,7 @@ sed \
   install.py > "$INSTALLER_PATH"
 chmod +x "$INSTALLER_PATH"
 
-git push origin "refs/tags/$VERSION"
+git push origin HEAD "refs/tags/$VERSION"
 gh release create "$VERSION" "$ARCHIVE_PATH" "$INSTALLER_PATH" --title "$VERSION" --generate-notes
 
 echo "Published $VERSION. Install with:"

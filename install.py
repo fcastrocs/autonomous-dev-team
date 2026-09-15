@@ -55,6 +55,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--provider",
         default="all",
+        choices=VALID_PROVIDERS,
         help="all, codex, claude, antigravity, or agy (default: all)",
     )
     parser.add_argument(

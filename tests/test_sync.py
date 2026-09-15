@@ -350,6 +350,32 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Python 3.11 or higher is required", result.stderr)
 
+    def test_remote_installer_success(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            runner = tmppath / "install.py"
+            shutil.copy(BASE_DIR / "install.py", runner)
+            archive = tmppath / "release-v1.0.0.tar.gz"
+            prefix = "autonomous-dev-team-v1.0.0"
+            with tarfile.open(archive, "w:gz") as bundle:
+                bundle.add(BASE_DIR / sync.CONFIG_NAME, arcname=f"{prefix}/{sync.CONFIG_NAME}")
+                bundle.add(BASE_DIR / "sync.py", arcname=f"{prefix}/sync.py")
+                bundle.add(BASE_DIR / "agents", arcname=f"{prefix}/agents")
+                if (BASE_DIR / "skills").exists():
+                    bundle.add(BASE_DIR / "skills", arcname=f"{prefix}/skills")
+            checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+            target = tmppath / "target"
+            result = subprocess.run(
+                [sys.executable, str(runner), "--version", "v1.0.0", "--archive-url",
+                 archive.as_uri(), "--sha256", checksum, "--provider", "all",
+                 str(target)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"Installer failed: {result.stderr}")
+            self.assertTrue((target / sync.CONFIG_NAME).exists())
+            self.assertTrue((target / "sync.py").exists())
+            self.assertTrue((target / "AGENTS.md").exists())
+            self.assertTrue((target / "CLAUDE.md").exists())
+
     def test_native_provider_outputs_and_codex_hierarchy(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         codex = outputs[BASE_DIR / ".codex" / "config.toml"]
@@ -552,6 +578,27 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertEqual(len(colon_indices), 1, f"Colons not aligned: {colon_indices}")
         reasoning_indices = {l.index("(reasoning:") for l in lines}
         self.assertEqual(len(reasoning_indices), 1, f"Reasoning not aligned: {reasoning_indices}")
+
+    def test_makefile_targets_consistency(self):
+        makefile_path = BASE_DIR / "Makefile"
+        self.assertTrue(makefile_path.exists())
+        content = makefile_path.read_text(encoding="utf-8")
+        
+        # Extract .PHONY targets
+        phony_match = re.search(r'^\.PHONY:\s*(.+)$', content, re.MULTILINE)
+        self.assertIsNotNone(phony_match)
+        phony_targets = phony_match.group(1).split()
+        
+        # Ensure each phony target has a defined rule
+        for target in phony_targets:
+            res = subprocess.run(
+                ["make", "-n", target],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, f"make -n {target} failed: {res.stderr}")
+            self.assertNotIn("Nothing to be done for", res.stdout, f"Target '{target}' has no recipe in Makefile")
 
 
 if __name__ == "__main__":

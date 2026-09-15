@@ -69,13 +69,17 @@ curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/down
 
 ### Local Installation (Development Checkout)
 
-When developing inside a checkout of this repository, use the local installer:
+To install from a local checkout into a target repository:
 
 ```bash
-python3 install.py
+# Run from within the target repository:
+python3 /path/to/autonomous-dev-team/install.py
+
+# Or specify the target path directly:
+python3 install.py /path/to/target-project
 
 # To update an existing installation explicitly:
-python3 install.py --force
+python3 install.py --force /path/to/target-project
 ```
 
 ## Set Up Your Project
@@ -107,11 +111,11 @@ Depending on the selected provider, the compiler generates:
 
 | Provider | Generated Artifacts |
 |---|---|
-| **Codex** | `.codex/config.toml`, `.codex/agents/*.toml` |
-| **Claude Code** | `CLAUDE.md`, `.claude/agents/*.md` |
-| **Google Antigravity** | `AGENTS.md` |
+| **Codex** | `.codex/config.toml`, `.codex/agents/*.toml`, `.codex/prompts/team.md` |
+| **Claude Code** | `CLAUDE.md`, `.claude/agents/*.md`, `.claude/skills/team/*` |
+| **Google Antigravity** | `AGENTS.md`, `.agents/skills/team/*` |
 
-`.autonomous-dev-team.toml` is the sole source of truth. Role instructions in `agents/` and generated provider files should never be edited by hand.
+The compiler also tracks managed files in `.autonomous-dev-team.manifest.json` for clean pruning and synchronization. `.autonomous-dev-team.toml` is the sole source of truth. Role instructions in `agents/` and generated provider files should never be edited by hand.
 
 ## How the Workflow Works
 
@@ -140,23 +144,42 @@ After modifying `.autonomous-dev-team.toml`, run `python3 sync.py`.
 
 ## Developing this Repository
 
+Using `make` (run `make help` for all targets) or standard Python commands:
+
 - **Run focused unit tests**:
   ```bash
-  python3 -m unittest tests/test_sync.py
+  make test
+  # or: python3 -m unittest tests/test_sync.py
   ```
 - **Run the full test discovery suite**:
   ```bash
-  python3 -m unittest discover tests
+  make test-all
+  # or: python3 -m unittest discover tests
   ```
 - **Check configuration sync**:
   ```bash
-  python3 sync.py --check
+  make check
+  # or: python3 sync.py --check
+  ```
+- **Inspect active roster & sync status**:
+  ```bash
+  make team
+  # or: python3 sync.py --team
+  ```
+- **Synchronize provider configurations**:
+  ```bash
+  make sync
+  # or: python3 sync.py
   ```
 - **Publish a release** (GitHub CLI authentication required):
   ```bash
   ./release.sh
+  # or with an explicit version:
+  ./release.sh v0.1.0
+  # or via make:
+  make release [VERSION=v0.1.0]
   ```
-  Requires a clean checkout, bumps the latest semantic patch version tag, archives repository sources, injects pinned defaults into `install.py`, and publishes a GitHub release.
+  Requires a clean checkout, runs test and sync verification, bumps the latest semantic patch version tag (or uses the specified version), archives repository sources, injects pinned defaults into `install.py`, and publishes a GitHub release.
 
 ## License
 
