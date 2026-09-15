@@ -53,7 +53,7 @@ else
   ')
 
   if [[ -z $CURRENT_VERSION ]]; then
-    VERSION=v0.1.0
+    VERSION=v0.0.1
   else
     IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
     VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"

@@ -175,11 +175,11 @@ Using `make` (run `make help` for all targets) or standard Python commands:
   ```bash
   ./release.sh
   # or with an explicit version:
-  ./release.sh v0.1.0
+  ./release.sh v0.0.1
   # or via make:
-  make release [VERSION=v0.1.0]
+  make release [VERSION=v0.0.1]
   ```
-  Requires a clean checkout, runs test and sync verification, bumps the latest semantic patch version tag (or uses the specified version), archives repository sources, injects pinned defaults into `install.py`, and publishes a GitHub release.
+  Requires a clean checkout, runs test and sync verification, starts at `v0.0.1` (or increments the latest patch version `v0.0.2`, `v0.0.3`, etc.), archives repository sources, injects pinned defaults into `install.py`, and publishes a GitHub release.
 
 ## License
 
