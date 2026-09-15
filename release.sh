@@ -16,7 +16,7 @@ fi
 if [[ -n $(git status --porcelain) ]]; then
   fail "working tree must be clean"
 fi
-if [[ ! -f install.sh || ! -f sync.py || ! -d agents || ! -d skills ]]; then
+if [[ ! -f install.py || ! -f sync.py || ! -d agents || ! -d skills ]]; then
   fail "run this command from the autonomous-dev-team repository root"
 fi
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required"
@@ -52,7 +52,7 @@ fi
 RELEASE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/autonomous-dev-team-release.XXXXXX")
 ARCHIVE_NAME="autonomous-dev-team-$VERSION.tar.gz"
 ARCHIVE_PATH="$RELEASE_DIR/$ARCHIVE_NAME"
-INSTALLER_PATH="$RELEASE_DIR/install.sh"
+INSTALLER_PATH="$RELEASE_DIR/install.py"
 
 cleanup() {
   rm -rf "$RELEASE_DIR"
@@ -72,14 +72,14 @@ fi
 
 ARCHIVE_URL="https://github.com/$REPOSITORY/releases/download/$VERSION/$ARCHIVE_NAME"
 sed \
-  -e "s|^DEFAULT_VERSION=$|DEFAULT_VERSION=$VERSION|" \
-  -e "s|^DEFAULT_ARCHIVE_URL=$|DEFAULT_ARCHIVE_URL=$ARCHIVE_URL|" \
-  -e "s|^DEFAULT_SHA256=$|DEFAULT_SHA256=$CHECKSUM|" \
-  install.sh > "$INSTALLER_PATH"
+  -e "s|^DEFAULT_VERSION = .*$|DEFAULT_VERSION = \"$VERSION\"|" \
+  -e "s|^DEFAULT_ARCHIVE_URL = .*$|DEFAULT_ARCHIVE_URL = \"$ARCHIVE_URL\"|" \
+  -e "s|^DEFAULT_SHA256 = .*$|DEFAULT_SHA256 = \"$CHECKSUM\"|" \
+  install.py > "$INSTALLER_PATH"
 chmod +x "$INSTALLER_PATH"
 
 git push origin "refs/tags/$VERSION"
 gh release create "$VERSION" "$ARCHIVE_PATH" "$INSTALLER_PATH" --title "$VERSION" --generate-notes
 
 echo "Published $VERSION. Install with:"
-echo "curl -fsSL https://github.com/$REPOSITORY/releases/latest/download/install.sh | bash"
+echo "curl -fsSL https://github.com/$REPOSITORY/releases/latest/download/install.py | python3 -"

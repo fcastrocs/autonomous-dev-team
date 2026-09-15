@@ -1,82 +1,132 @@
 # Autonomous Dev Team
 
-Autonomous Dev Team adds a practical multi-agent workflow to Codex, Claude Code, and Google Antigravity. It generates each provider's native instruction files from one project configuration.
+Autonomous Dev Team adds a practical multi-agent workflow to Codex, Claude Code, and Google Antigravity.
 
-## Install
+## Dev Team Roster
 
-Once a release has been published, from the root of the repository you want to set up, run:
+Autonomous Dev Team organizes specialized agents into a cohesive engineering team coordinated by the orchestrator:
 
+| Role | Agent | Responsibilities |
+|---|---|---|
+| **Orchestrator** | `/root` | Interprets intent, selects workflow tiers, routes tasks, and synthesizes final completion. |
+| **Code Explorer** | `code-explorer` | Gathers targeted facts, traces symbols, and maps call flows without making edits. |
+| **Planner** | `planner` | Deconstructs complex work into 1–3 cohesive implementation slices with clear invariants. |
+| **Quick Implementer** | `quick-implementer` | Fast, surgical, single-file edits and low-risk fixes verified by focused unit tests. |
+| **Implementer** | `implementer` | End-to-end features and multi-file fixes; owns code correctness and focused unit tests. |
+| **Diagnostician** | `diagnostician` | Investigates unknown bugs, identifies root causes, and proves reproduction paths. |
+| **Code Validator** | `code-validator` | Independently verifies full test suites, packaging, builds, and regression risks. |
+| **Code Reviewer** | `code-reviewer` | Inspects semantic risks, architecture alignment, safety, and guardrail enforcement. |
+| **Commit Pusher** | `commit-pusher` | Manages Git operations, atomic commits, staging, and branch pushing safely. |
+
+> **Roster Inspection:** Run `python3 sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers.
+
+## Requirements
+
+- **Python 3.11+** (standard library only; no external package dependencies required)
+- At least one supported AI coding assistant CLI:
+  - [OpenAI Codex](https://github.com/openai/codex)
+  - [Anthropic Claude Code](https://github.com/anthropics/claude-code)
+  - [Google Antigravity](https://github.com/google-deepmind) (`agy`)
+
+## Installation
+
+### Remote Installation (Published Release)
+
+Run the installer from the root of the repository you want to set up:
+
+**Linux / macOS:**
 ```bash
-curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.py | python3 -
 ```
 
-That installs support for every provider into the current directory. To install only one provider, add `--provider`:
-
-```bash
-curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.sh | bash -s -- --provider codex
+**Windows (PowerShell):**
+```powershell
+curl.exe -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.py | python -
 ```
 
-Supported values are `codex`, `claude`, `antigravity` (or `agy`), and `all`.
+### Installation Options
 
-On a fresh installation, the installer adds its managed sources (`sync.py` and `agents/*`) while preserving your other project files and configuration. It derives the new project's `.autonomous-dev-team.toml` from this repository's canonical configuration and tailors only the detected project settings. If any managed source already exists, installation stops without replacing it. To explicitly update or replace them, rerun the command with `--force` (for a piped installer, use `bash -s -- --force`). You still need to authenticate the relevant provider CLI yourself.
-
-If you are developing this repository before publishing a release, use the local installer instead:
+Pass options directly after the command:
 
 ```bash
-./install.sh
+# Install for a specific provider
+curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.py | python3 - --provider codex
+
+# Overwrite existing managed source files
+curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.py | python3 - --force
 ```
 
-To update an existing local installation explicitly, run `./install.sh --force`.
+| Option | Values | Default | Description |
+|---|---|---|---|
+| `--provider` | `all`, `codex`, `claude`, `antigravity`, `agy` | `all` | Target AI provider configuration |
+| `--force` | _flag_ | `false` | Replace existing managed source files |
+| `-h`, `--help` | _flag_ | | Show usage instructions and options |
 
-## Set up your project
+> **Installation Behavior:**
+> - Fresh installations copy managed sources (`sync.py`, `agents/*`, `skills/*`) while preserving existing project files.
+> - If any managed source already exists, installation stops without replacing it. Use `--force` to explicitly update them.
+> - Authentication is provider-owned; authenticate with your provider CLI before use.
 
-Installation creates `.autonomous-dev-team.toml` in your repository. This is the only file you should configure or edit. Do not modify any other installed or generated file. Use it to adjust the commands and guardrails for your project—for example, its test command, build command, and paths agents must not edit.
+### Local Installation (Development Checkout)
 
-Then regenerate provider files:
+When developing inside a checkout of this repository, use the local installer:
 
 ```bash
-./sync.py
+python3 install.py
+
+# To update an existing installation explicitly:
+python3 install.py --force
 ```
 
-Confirm that generated files match the configuration:
+## Set Up Your Project
 
-```bash
-./sync.py --check
-```
+1. **Configure Your Project**:
+   Installation generates `.autonomous-dev-team.toml` in your repository. This is the **only file you should configure or edit**. Use it to define test commands, build commands, provider models, and guardrails.
 
-Verify the active provider, sync status, and agent team roster:
+2. **Regenerate Provider Files**:
+   ```bash
+   python3 sync.py
+   ```
 
-```bash
-./sync.py --team
-```
+3. **Verify Configuration Sync**:
+   ```bash
+   python3 sync.py --check
+   ```
 
-You can also type `/team` during an agent session (Google Antigravity `agy`, Claude Code, or Codex) to inspect the loaded team roster and reasoning tiers.
+4. **Inspect Roster & Sync Status**:
+   ```bash
+   python3 sync.py --team
+   ```
+   You can also type `/team` during an active agent session (Codex, Claude Code, or Antigravity) to inspect loaded team roles and reasoning tiers.
 
-Run `./sync.py` again whenever you change `.autonomous-dev-team.toml`.
+> Re-run `python3 sync.py` whenever you modify `.autonomous-dev-team.toml`.
 
-## What it creates
+## Generated Files
 
-Depending on the selected provider, the installer generates:
+Depending on the selected provider, the compiler generates:
 
-- Codex: `.codex/config.toml` and `.codex/agents/`
-- Claude Code: `CLAUDE.md` and `.claude/agents/`
-- Google Antigravity: `AGENTS.md`
+| Provider | Generated Artifacts |
+|---|---|
+| **Codex** | `.codex/config.toml`, `.codex/agents/*.toml` |
+| **Claude Code** | `CLAUDE.md`, `.claude/agents/*.md` |
+| **Google Antigravity** | `AGENTS.md` |
 
-`.autonomous-dev-team.toml` is the only supported customization file and the only TOML configuration source. Role instructions and the shared orchestration policy in `agents/`, along with generated provider files, should not be edited by hand; refresh generated files with `./sync.py`.
+`.autonomous-dev-team.toml` is the sole source of truth. Role instructions in `agents/` and generated provider files should never be edited by hand.
 
-## How the workflow works
+## How the Workflow Works
 
-The root agent chooses the smallest safe workflow for a task:
+The root agent selects the smallest safe workflow tier for each task:
 
-- Direct checks and deterministic commands run directly.
-- Small, local changes get one focused implementer.
-- Larger changes are explored, planned in cohesive slices, implemented, and independently validated.
+- **Tier 0 (Direct)**: Inspection, configuration checks, and deterministic sync run directly.
+- **Tier 1 (Surgical)**: Local, low-risk changes route to `quick-implementer`.
+- **Tier 2 (Feature / Fix)**: Cohesive features go to `implementer`; unknown-cause failures route first to `diagnostician`. Independent verification is owned by `code-validator`.
+- **Tier 3 (Architecture)**: `code-explorer` inspects, `planner` defines cohesive slices, implementers execute, and `code-validator` validates.
 
-The protocol also limits context duplication, avoids polling loops, and keeps verification proportional to risk.
+Context duplication is strictly minimized, polling loops are avoided, and verification remains proportional to risk.
 
-## Configuration
+## Configuration Example
 
-Use `.autonomous-dev-team.toml` to select active providers and models. A typical change looks like:
+Select active providers and models in `.autonomous-dev-team.toml`:
 
 ```toml
 active_provider = "codex"
@@ -86,23 +136,27 @@ model = "gpt-5.6-terra"
 reasoning_effort = "low"
 ```
 
-After editing it, run `./sync.py`.
+After modifying `.autonomous-dev-team.toml`, run `python3 sync.py`.
 
-## Developing this repository
+## Developing this Repository
 
-Run the focused test suite:
-
-```bash
-python3 -m unittest tests/test_sync.py
-```
-
-To publish a release (GitHub CLI authentication required):
-
-```bash
-./release.sh
-```
-
-The command requires a clean checkout, finds the latest `vMAJOR.MINOR.PATCH` tag (local or on `origin`), and bumps its patch version. With no existing release it starts at `v0.0.1`. It then tags and pushes that version and publishes a checksum-pinned installer plus its matching payload. After it succeeds, the installation commands above are available.
+- **Run focused unit tests**:
+  ```bash
+  python3 -m unittest tests/test_sync.py
+  ```
+- **Run the full test discovery suite**:
+  ```bash
+  python3 -m unittest discover tests
+  ```
+- **Check configuration sync**:
+  ```bash
+  python3 sync.py --check
+  ```
+- **Publish a release** (GitHub CLI authentication required):
+  ```bash
+  ./release.sh
+  ```
+  Requires a clean checkout, bumps the latest semantic patch version tag, archives repository sources, injects pinned defaults into `install.py`, and publishes a GitHub release.
 
 ## License
 

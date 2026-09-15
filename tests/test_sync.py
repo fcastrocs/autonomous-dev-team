@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -205,7 +206,7 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_no_secondary_config_template_exists_or_is_required(self):
         self.assertFalse((BASE_DIR / "templates").exists())
-        installer = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
+        installer = (BASE_DIR / "install.py").read_text(encoding="utf-8")
         self.assertNotIn("templates", installer)
         self.assertIn(sync.CONFIG_NAME, installer)
 
@@ -228,7 +229,7 @@ class TestSyncCompiler(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "new project"
             unrelated = target / "config.toml"
-            command = ["bash", str(BASE_DIR / "install.sh"), "--provider", "codex", str(target)]
+            command = [sys.executable, str(BASE_DIR / "install.py"), "--provider", "codex", str(target)]
             subprocess.run(command, check=True, capture_output=True, text=True)
             first_config = (target / sync.CONFIG_NAME).read_text(encoding="utf-8")
             self.assertIn('active_provider = "codex"', first_config)
@@ -261,14 +262,14 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_remote_installer_requires_pinned_verified_archive(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            runner = Path(tmpdir) / "install.sh"
-            shutil.copy(BASE_DIR / "install.sh", runner)
-            result = subprocess.run(["bash", str(runner), str(Path(tmpdir) / "target")], capture_output=True, text=True)
+            runner = Path(tmpdir) / "install.py"
+            shutil.copy(BASE_DIR / "install.py", runner)
+            result = subprocess.run([sys.executable, str(runner), str(Path(tmpdir) / "target")], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("remote installation requires --version", result.stderr)
 
             result = subprocess.run(
-                ["bash", str(runner), "--version", "v1", "--archive-url",
+                [sys.executable, str(runner), "--version", "v1", "--archive-url",
                  "https://example.invalid/v1.tar.gz", "--sha256", "bad", str(Path(tmpdir) / "target")],
                 capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -284,7 +285,7 @@ class TestSyncCompiler(unittest.TestCase):
                 outside.mkdir()
                 (target / managed_dir).symlink_to(outside, target_is_directory=True)
                 command = [
-                    "bash", str(BASE_DIR / "install.sh"), "--provider", "codex",
+                    sys.executable, str(BASE_DIR / "install.py"), "--provider", "codex",
                     "--force", str(target),
                 ]
 
@@ -298,8 +299,8 @@ class TestSyncCompiler(unittest.TestCase):
     def test_remote_installer_rejects_special_archive_members(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
-            runner = tmppath / "install.sh"
-            shutil.copy(BASE_DIR / "install.sh", runner)
+            runner = tmppath / "install.py"
+            shutil.copy(BASE_DIR / "install.py", runner)
             archive = tmppath / "release-v1.tar.gz"
             with tarfile.open(archive, "w:gz") as bundle:
                 directory = tarfile.TarInfo("release-v1/")
@@ -309,34 +310,45 @@ class TestSyncCompiler(unittest.TestCase):
                 fifo.type = tarfile.FIFOTYPE
                 bundle.addfile(fifo)
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-            bin_dir = tmppath / "bin"
-            bin_dir.mkdir()
-            fake_curl = bin_dir / "curl"
-            fake_curl.write_text(
-                "#!/bin/sh\n"
-                "while [ \"$#\" -gt 0 ]; do\n"
-                "  if [ \"$1\" = --output ]; then cp \"$MALICIOUS_ARCHIVE\" \"$2\"; exit; fi\n"
-                "  shift\n"
-                "done\nexit 2\n",
-                encoding="utf-8")
-            fake_curl.chmod(0o755)
-            environment = os.environ.copy()
-            environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
-            environment["MALICIOUS_ARCHIVE"] = str(archive)
             result = subprocess.run(
-                ["bash", str(runner), "--version", "v1", "--archive-url",
-                 "https://example.invalid/release-v1.tar.gz", "--sha256", checksum,
+                [sys.executable, str(runner), "--version", "v1", "--archive-url",
+                 archive.as_uri(), "--sha256", checksum,
                  str(tmppath / "target")],
-                capture_output=True, text=True, env=environment)
+                capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unsafe path or non-file entry", result.stderr)
 
-    def test_installer_avoids_gnu_only_utility_options(self):
-        installer = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
-        self.assertIn("shasum -a 256", installer)
-        self.assertNotIn("--no-same-owner", installer)
-        self.assertNotIn("--no-same-permissions", installer)
-        self.assertNotRegex(installer, r"\b(?:cp|mv)\s+[^\n]*--")
+    def test_installer_is_cross_platform_pure_python(self):
+        installer = (BASE_DIR / "install.py").read_text(encoding="utf-8")
+        self.assertIn("sys.version_info < (3, 11)", installer)
+        self.assertIn("sys.executable", installer)
+        self.assertNotIn("shasum", installer)
+        self.assertNotIn("curl", installer)
+
+    def test_remote_installer_rejects_checksum_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            runner = tmppath / "install.py"
+            shutil.copy(BASE_DIR / "install.py", runner)
+            archive = tmppath / "release-v1.tar.gz"
+            archive.write_bytes(b"invalid-archive-content")
+            result = subprocess.run(
+                [sys.executable, str(runner), "--version", "v1", "--archive-url",
+                 archive.as_uri(), "--sha256", "0" * 64,
+                 str(tmppath / "target")],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("checksum verification failed", result.stderr)
+
+    def test_installer_enforces_python_311_requirement(self):
+        installer = (BASE_DIR / "install.py").read_text(encoding="utf-8")
+        self.assertIn("sys.version_info < (3, 11)", installer)
+        code = "import sys; sys.version_info = (3, 10, 0); " + installer.split("import sys\n", 1)[1]
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Python 3.11 or higher is required", result.stderr)
 
     def test_native_provider_outputs_and_codex_hierarchy(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
