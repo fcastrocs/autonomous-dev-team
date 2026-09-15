@@ -1,6 +1,6 @@
 # Autonomous Dev Team
 
-Autonomous Dev Team adds a practical multi-agent workflow to Codex, Claude Code, Gemini, and Antigravity. It generates each provider's native instruction files from one project configuration.
+Autonomous Dev Team adds a practical multi-agent workflow to Codex, Claude Code, and Google Antigravity. It generates each provider's native instruction files from one project configuration.
 
 ## Install
 
@@ -16,15 +16,17 @@ That installs support for every provider into the current directory. To install 
 curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/download/install.sh | bash -s -- --provider codex
 ```
 
-Supported values are `codex`, `claude`, `gemini`, `antigravity` (or `agy`), and `all`.
+Supported values are `codex`, `claude`, `antigravity` (or `agy`), and `all`.
 
-The installer preserves your existing project files and configuration. You still need to authenticate the relevant provider CLI yourself.
+On a fresh installation, the installer adds its managed sources (`sync.py` and `agents/*`) while preserving your other project files and configuration. It derives the new project's `.autonomous-dev-team.toml` from this repository's canonical configuration and tailors only the detected project settings. If any managed source already exists, installation stops without replacing it. To explicitly update or replace them, rerun the command with `--force` (for a piped installer, use `bash -s -- --force`). You still need to authenticate the relevant provider CLI yourself.
 
 If you are developing this repository before publishing a release, use the local installer instead:
 
 ```bash
 ./install.sh
 ```
+
+To update an existing local installation explicitly, run `./install.sh --force`.
 
 ## Set up your project
 
@@ -42,6 +44,14 @@ Confirm that generated files match the configuration:
 ./sync.py --check
 ```
 
+Verify the active provider, sync status, and agent team roster:
+
+```bash
+./sync.py --team
+```
+
+You can also type `/team` during an agent session (Google Antigravity `agy`, Claude Code, or Codex) to inspect the loaded team roster and reasoning tiers.
+
 Run `./sync.py` again whenever you change `.autonomous-dev-team.toml`.
 
 ## What it creates
@@ -50,10 +60,9 @@ Depending on the selected provider, the installer generates:
 
 - Codex: `.codex/config.toml` and `.codex/agents/`
 - Claude Code: `CLAUDE.md` and `.claude/agents/`
-- Gemini: `GEMINI.md` and `.gemini/settings.json`
-- Antigravity: `AGENTS.md`
+- Google Antigravity: `AGENTS.md`
 
-`.autonomous-dev-team.toml` is the only supported customization file. The protocol and generated provider files should not be edited by hand; refresh generated files with `./sync.py`.
+`.autonomous-dev-team.toml` is the only supported customization file and the only TOML configuration source. Role instructions and the shared orchestration policy in `agents/`, along with generated provider files, should not be edited by hand; refresh generated files with `./sync.py`.
 
 ## How the workflow works
 

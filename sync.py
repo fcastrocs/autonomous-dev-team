@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
 Autonomous Multi-Agent Protocol — Synchronizer & Compiler
-Single source of truth compiler: merges .autonomous-dev-team.toml + agents/*.md into
-provider-specific configurations (.codex/, CLAUDE.md, AGENTS.md, GEMINI.md).
+Single source of truth compiler: merges .autonomous-dev-team.toml, agents/*.md, and skills/
+into provider-specific configurations (.codex/, .claude/, .agents/, CLAUDE.md, AGENTS.md).
 Includes stack auto-detection, zero-friction init, and CI consistency checks.
 """
+# ==============================================================================
+# ARCHITECTURAL RULE / INVARIANT:
+# NEVER HARDCODE OR INJECT PROVIDER, MODEL, OR AGENT SETTINGS IN THIS FILE.
+#
+# sync.py is strictly an automated compiler engine, not a configuration store.
+# ALL provider models, reasoning tiers, token limits, and agent specifications
+# MUST reside exclusively in .autonomous-dev-team.toml.
+# Never modify sync.py to tune, override, or hardcode model names or agent settings.
+# ==============================================================================
 
 import argparse
 import json
@@ -13,11 +22,10 @@ import sys
 from pathlib import Path
 
 CONFIG_NAME = ".autonomous-dev-team.toml"
-LEGACY_CONFIG_NAME = "config.toml"
 SCHEMA_NAME = "autonomous-dev-team"
 SCHEMA_VERSION = 1
 MANIFEST_NAME = ".autonomous-dev-team.manifest.json"
-
+ORCHESTRATOR_PROTOCOL = Path("agents/orchestrator.md")
 # Python 3.11+ tomllib support
 try:
     import tomllib
@@ -41,84 +49,22 @@ DO NOT EDIT DIRECTLY. MAKE CHANGES IN .autonomous-dev-team.toml OR agents/ THEN 
 -->
 """
 
-ROUTING_ASCII_DIAGRAM = """```
-                                 TASK INTAKE
-                                      │
-          ┌───────────────────────────┼───────────────────────────┐
-          ▼                           ▼                           ▼
-    [ Tier 0/1 ]                 [ Tier 2 ]                  [ Tier 3 ]
-  Direct / Surgical          Cohesive Feature            Cross-Subsystem
-          │                           │                           │
-  Direct Operation                    │                  code-explorer
-         OR              Known Cause? ├── Yes ──► implementer   (targeted)
-  quick-implementer                   │                │          │
-  (focused check)                     └── No ──► code-explorer   planner
-          │                                            │     (1–3 slices)
-          │                                       implementer     │
-          │                                            │     implementer(s)
-          │                                     reviewer (risky)  │
-          │                                            │     validator
-          │                                            │     (build/integration)
-          │                                            │          │
-          │                                            │     reviewer (risky)
-          └───────────────────────────┬───────────────────────────┘
-                                      ▼
-                                   COMPLETE
-```"""
+def read_canonical_source(base_dir: Path, relative_path: Path) -> str:
+    path = base_dir / relative_path
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Required canonical source is missing: {path}") from exc
 
-COMMUNICATION_CONTRACTS_MD = """## Inter-Agent Communication Contracts
 
-### A. Discovery Manifest (`code-explorer` → `/root` / `planner` / `implementer`)
-```markdown
-## Discovery Manifest
-### Root Cause: <concise verified explanation>
-### Relevant Files:
-- `path/to/file` — symbol/function — why relevant
-### Execution / Data Flow:
-1. <entry / event> -> 2. <state mutation> -> 3. <consumer / render>
-### Verified Facts:
-- <concrete fact 1>
-### Uncertainties: None | <specific detail>
-### Recommended Ownership Boundary: <files that must stay in ONE implementation slice>
-### Suggested Verification: <exact focused test command>
-```
+def compile_orchestrator_protocol(base_dir: Path, project: dict, guardrails_block: str) -> str:
+    source = read_canonical_source(base_dir, ORCHESTRATOR_PROTOCOL)
+    return interpolate_prompt(source, project, guardrails_block).strip()
 
-### B. Compact Dispatch Contract (`/root` → Subagent)
-```markdown
-## Assignment
-**Goal:** <one sentence>
-**Why:** <one or two sentences context>
-**Scope:** `path/to/file-a`, `path/to/file-b`
-**Relevant symbols:** `symbolA`, `symbolB`
-**Verified facts:** <from explorer or previous turn>
-**Constraints:** <e.g. preserve dirty worktree, subsystem isolation>
-**Required behavior:** <concrete expected result>
-**Verification responsibility:** `<exact command the agent must execute>`
-**Do not do:** <explicit non-goals>
-```
 
-### C. Compact Completion Contract (Subagent → `/root`)
-```markdown
-## Completion
-**Status:** PASS | FAIL | BLOCKED
-**Changed:**
-- `path/to/file`: <short description>
-**Behavior:** <what now works>
-**Verification:** `<command>` — PASS / FAIL
-**Remaining risk:** None | <one concise item>
-**Follow-up needed:** No | <exact next action>
-```
-
-### D. Repair Request Packet (`/root` → Original Implementer)
-```markdown
-## Repair Request
-**Original goal:** ...
-**Observed failure:** ...
-**Exact evidence:** failing command, exit code, error excerpt
-**Changed files from previous attempt:** `path/to/file`
-**Known-good facts:** ...
-**Scope:** Repair the existing implementation. Do not restart architectural exploration.
-```"""
+def provider_agents(config: dict, provider: str) -> dict:
+    """Return configured agents."""
+    return dict(config.get(provider, {}).get("agents", {}))
 
 def load_config(config_path: Path) -> dict:
     if not config_path.exists():
@@ -126,20 +72,10 @@ def load_config(config_path: Path) -> dict:
     with open(config_path, "rb") as f:
         return tomllib.load(f)
 
-def is_legacy_config(config: dict) -> bool:
-    project = config.get("project")
-    return (isinstance(project, dict)
-            and project.get("build_sync_cmd") == "python3 sync.py"
-            and isinstance(project.get("forbidden_paths"), list)
-            and isinstance(config.get("codex", {}).get("orchestrator"), dict))
-
 def resolve_config_path(base_dir: Path) -> Path:
     namespaced = base_dir / CONFIG_NAME
     if namespaced.exists():
         return namespaced
-    legacy = base_dir / LEGACY_CONFIG_NAME
-    if legacy.exists() and is_legacy_config(load_config(legacy)):
-        return legacy
     sys.exit(f"Error: Configuration file '{namespaced}' not found.\nRun './sync.py --init' to generate one.")
 
 def managed_path(base_dir: Path, relative: str):
@@ -170,9 +106,7 @@ def output_provider(relative: str):
         return "codex"
     if relative == "CLAUDE.md" or (path.parts and path.parts[0] == ".claude"):
         return "claude"
-    if relative == "GEMINI.md" or (path.parts and path.parts[0] == ".gemini"):
-        return "gemini"
-    if relative == "AGENTS.md":
+    if relative == "AGENTS.md" or (path.parts and path.parts[0] == ".agents"):
         return "antigravity"
     return None
 
@@ -240,47 +174,18 @@ def compile_codex(config: dict, project: dict, guardrails_block: str, base_dir: 
     """Compiles Codex configuration into .codex/config.toml and .codex/agents/*.toml. Returns map of file paths to contents."""
     codex_conf = config.get("codex", {})
     orch = codex_conf.get("orchestrator", {})
-    agents_conf = codex_conf.get("agents", {})
+    agents_conf = provider_agents(config, "codex")
     
     outputs = {}
     codex_dir = base_dir / ".codex"
     out_agents_dir = codex_dir / "agents"
     
-    focused_test = project.get("focused_test_cmd", "npm test -- {file}")
-    full_test = project.get("full_test_cmd", "npm test")
-    build_cmd = project.get("build_cmd", "npm run build")
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    dev_instructions = f"""# Codex delegation adapter
+Use `spawn_agent` with `fork_turns = "none"` and pass only the Compact Dispatch Contract.
+Use `code-explorer` for targeted repository discovery and `diagnostician` for unknown-cause failures.
 
-    # Developer instructions for root orchestrator in Codex
-    dev_instructions = f"""# Critical Token Optimization & Operational Guardrails
-1. ZERO FULL-HISTORY FORKS: When calling spawn_agent, you MUST ALWAYS set fork_turns = "none". Never use fork_turns = "all" or omit it. Child agents must receive only a compact dispatch contract (<= 1,500 tokens).
-2. NO BUSY-POLLING: Never busy-poll wait_agent or repeatedly call list_agents. When waiting for a subagent, wait for reactive notification or use a long timeout (>= 180s).
-3. NO MONOLITHIC SUBAGENTS: Do not reuse a subagent across multiple disparate tasks or subsystems. Subagents must own one cohesive slice and terminate upon reporting completion.
-4. BOUNDED INSPECTION: Limit sed -n to <= 60 lines. Limit git diff to -U3. Pipe test runs to tail -n 25.
-
-# Repository Invariants & Safety Guardrails
-{guardrails_block}
-
-# Adaptive Task Routing (Tiers 0–3)
-Classify incoming requests into one of four tiers:
-- Tier 0 (Direct Operation): Inspecting status, running deterministic build sync, checking configs -> execute directly without spawning subagents.
-- Tier 1 (Surgical Change): 1 file or localized edit, typo, simple helper -> spawn `quick-implementer` with narrow unit check (`{focused_test}`).
-- Tier 2 (Cohesive Feature / Localized Bug): 1–3 tightly coupled files in a single subsystem -> spawn `implementer` (owns cohesive seam + unit tests). If public contract or lifecycle changed, spawn `code-reviewer`.
-- Tier 3 (Cross-Subsystem / Architectural Change): Multi-subsystem, lifecycle changes, boundary redesign -> spawn `code-explorer` for Discovery Manifest -> spawn `planner` (1–3 cohesive slices) -> spawn `implementer(s)` -> spawn `code-validator` for broad checks (`{full_test}`) -> optional `code-reviewer`.
-
-# Subagent Dispatch & Completion Contracts
-Always dispatch subagents with this exact Compact Dispatch Contract:
-```markdown
-## Assignment
-**Goal:** <one sentence>
-**Why:** <one or two sentences context>
-**Scope:** `path/to/file-a`, `path/to/file-b`
-**Relevant symbols:** `symbolA`, `symbolB`
-**Verified facts:** <from explorer or previous turn>
-**Constraints:** <e.g. preserve dirty worktree, subsystem isolation>
-**Required behavior:** <concrete expected result>
-**Verification responsibility:** `<exact command the agent must execute>`
-**Do not do:** <explicit non-goals>
-```
+{protocol}
 """
 
     config_lines = [
@@ -289,8 +194,9 @@ Always dispatch subagents with this exact Compact Dispatch Contract:
         f'model = "{orch.get("model", "gpt-5.6-terra")}"',
         f'model_reasoning_effort = "{orch.get("reasoning_effort", "low")}"',
         f'plan_mode_reasoning_effort = "{orch.get("plan_mode_reasoning_effort", "medium")}"',
-        f'tool_output_token_limit = {orch.get("tool_output_token_limit", 2500)}',
+        f'tool_output_token_limit = {orch.get("tool_output_token_limit", 6000)}',
         f'model_auto_compact_token_limit = {orch.get("model_auto_compact_token_limit", 45000)}',
+        f'model_auto_compact_token_limit_scope = "{orch.get("model_auto_compact_token_limit_scope", "body_after_prefix")}"',
         "",
         'developer_instructions = """',
         dev_instructions.strip(),
@@ -303,9 +209,11 @@ Always dispatch subagents with this exact Compact Dispatch Contract:
     
     agent_files = sorted(list(agents_dir.glob("*.md")))
     for afile in agent_files:
+        if afile.name == ORCHESTRATOR_PROTOCOL.name:
+            continue
         agent_name = afile.stem
         a_conf = agents_conf.get(agent_name, {})
-        desc = a_conf.get("description", f"Specialist agent: {agent_name}")
+        desc = a_conf.get("description", f"Agent: {agent_name}")
         model = a_conf.get("model", "gpt-5.6-luna")
         reasoning = a_conf.get("reasoning_effort", "low")
         
@@ -336,210 +244,116 @@ Always dispatch subagents with this exact Compact Dispatch Contract:
     outputs[codex_dir / "config.toml"] = "\n".join(config_lines)
     return outputs
 
-def compile_claude(config: dict, project: dict, guardrails_block: str, base_dir: Path, agents_dir: Path) -> dict:
-    """Compiles CLAUDE.md. Returns map of file paths to contents."""
-    claude_conf = config.get("claude", {})
-    orch = claude_conf.get("orchestrator", {})
-    agents_conf = claude_conf.get("agents", {})
-    
-    claude_file = base_dir / "CLAUDE.md"
-    
-    table_lines = [
-        "| Role / Specialist | Target Model | Thinking Effort | Purpose |",
-        "| :--- | :--- | :--- | :--- |",
-        f"| **Orchestrator (`/root`)** | `{orch.get('model', 'claude-3-7-sonnet')}` | `{orch.get('thinking', 'low')}` | Workflow coordination, routing, cohesive seam scoping |"
-    ]
-    for aname, aconf in sorted(agents_conf.items()):
-        table_lines.append(f"| `{aname}` | `{aconf.get('model', 'claude-3-5-haiku')}` | `{aconf.get('thinking', 'none')}` | Specialist role persona |")
-        
+def compile_claude(config: dict, project: dict, guardrails_block: str,
+                   base_dir: Path, agents_dir: Path) -> dict:
+    """Compiles Claude Code configuration into CLAUDE.md and .claude/agents/*.md. Returns map of file paths to contents."""
+    agents = provider_agents(config, "claude")
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    routing = "\n".join(
+        f"- `{name}`: `{agent.get('model', 'inherit')}` "
+        f"(thinking: `{agent.get('thinking', 'medium')}`)"
+        for name, agent in agents.items()
+    )
     claude_content = f"""{AUTO_GEN_HEADER_MD}
-# Claude Code — Project Guidelines & Autonomous Multi-Agent Protocol
+# Claude Code Delegation Adapter
 
-## Project Overview: {project.get('name', 'Repository')}
-{project.get('description', '')}
+Use Claude Code's native agent configuration in `.claude/agents/`.
+Each generated agent file contains its canonical role instructions and model mapping.
 
----
+{protocol}
 
-## 1. Repository Invariants & Safety Guardrails
-{guardrails_block}
+## Claude Model Routing
 
-### Output & Command Bounding Invariants:
-- Limit file reads (`sed -n`) to ≤60 lines.
-- Limit diff inspection to `git diff -U3` (never use large `-U` ranges).
-- Pipe broad test runs or searches to `head -n 30` or `tail -n 25`.
-- Never run interactive Git commands (`git add -p`, `git add -i`, `git rebase -i`).
-
----
-
-## 2. Adaptive Task Routing Policy
-Before executing, classify every task into one of four tiers:
-- **Tier 0 (Direct Operation)**: Inspecting status, running deterministic build sync, checking small configs → execute directly without ceremony.
-- **Tier 1 (Surgical Change)**: 1 file or localized edit, typo, simple helper → execute surgical edit + narrow test.
-- **Tier 2 (Cohesive Feature / Localized Bug)**: 1–3 tightly coupled files in a single subsystem → implementer owns complete behavioral seam + focused unit tests.
-- **Tier 3 (Cross-Subsystem / Architectural Change)**: Multi-subsystem, lifecycle changes, boundary redesign → plan cohesive slices first, implement sequentially or cleanly partitioned, validate independently.
-
-{ROUTING_ASCII_DIAGRAM}
-
----
-
-## 3. Specialist Roles & Model Routing Matrix
-When assuming specialist personas or delegating subtasks, adhere to the assigned models and thinking budgets:
-
-{chr(10).join(table_lines)}
-
----
-
-## 4. Specialist Persona Execution Guidelines
-Detailed operational rules, fit checks, and circuit breakers for each specialist are maintained in `agents/<name>.md`:
-- `agents/code-explorer.md` — Read-only scout; produces structured Discovery Manifests.
-- `agents/planner.md` — Contract-oriented slicer (1–3 slices); enforces anti-micro-slicing.
-- `agents/implementer.md` — Primary implementer; owns cohesive behavioral seam + unit tests to green.
-- `agents/quick-implementer.md` — Low-cost surgical implementer for small, single-file edits.
-- `agents/code-validator.md` — Independent runner for broad builds and integration suites (`{project.get('full_test_cmd', 'npm test')}`).
-- `agents/code-reviewer.md` — Senior reviewer for semantic risks (lifecycle, concurrency, security).
-- `agents/commit-pusher.md` — Safe deterministic non-interactive Git publisher.
-
-When executing as a specialist persona, inspect and adhere strictly to the corresponding template in `agents/`.
-
----
-
-## 5. Contract-Oriented Cohesive Slicing
-- A slice MUST own a complete behavioral contract (state manager + consumer + tests; or client + handler + types).
-- NEVER micro-slice by individual functions or separate tests from code.
-- Target: 1 slice for localized fixes; 2 slices for moderate features; max 3 slices for separable workstreams.
-
----
-
-{COMMUNICATION_CONTRACTS_MD}
-
----
-
-## 6. Validation & Review Policies
-- **Validate New Risk, Not Re-Run Proof**: If the implementer verified focused unit tests to green, DO NOT re-run that identical command in `code-validator`. `code-validator` runs ONLY broader suites (`{project.get('full_test_cmd', 'npm test')}`) or builds (`{project.get('build_cmd', 'npm run build')}`).
-- **Risk-Based Review**: Invoke `code-reviewer` only for semantic risk (state machine, concurrency, boundaries, security, storage migrations, public contracts). Skip for pure DOM/CSS, presentation, formatting, or low-risk mechanical changes.
+{routing}
 """
-    outputs = {claude_file: claude_content}
-    for afile in sorted(agents_dir.glob("*.md")):
-        name = afile.stem
-        agent = agents_conf.get(name, {})
-        description = agent.get("description", f"Specialist agent: {name}")
-        body = interpolate_prompt(afile.read_text(encoding="utf-8"), project, guardrails_block)
-        frontmatter = ["---", f"name: {name}", f"description: {json.dumps(description)}"]
-        if agent.get("model"):
-            frontmatter.append(f"model: {agent['model']}")
-        frontmatter.extend(["---", ""])
-        outputs[base_dir / ".claude" / "agents" / f"{name}.md"] = "\n".join(frontmatter) + body
+    outputs = {base_dir / "CLAUDE.md": claude_content}
+
+    for agent_path in sorted(agents_dir.glob("*.md")):
+        role = agent_path.stem
+        if role not in agents:
+            continue
+        model = agents[role].get("model", "inherit")
+        effort = agents[role].get("thinking", "medium")
+        description = (
+            f"{role} agent for {config['project']['name']} "
+            f"(reasoning effort: {effort})."
+        )
+        outputs[base_dir / f".claude/agents/{role}.md"] = (
+            f"---\nname: {role}\ndescription: {description}\nmodel: {model}\n---\n\n"
+            + interpolate_prompt(
+                agent_path.read_text(encoding="utf-8"), project, guardrails_block
+            )
+        )
     return outputs
 
-def compile_gemini(config: dict, project: dict, guardrails_block: str, base_dir: Path) -> dict:
-    """Compile Gemini CLI's project context and settings files."""
-    gemini_conf = config.get("gemini", {})
-    orch = gemini_conf.get("orchestrator", {})
-    agents_conf = gemini_conf.get("agents", {})
-    
-    gemini_file = base_dir / "GEMINI.md"
-    
-    table_lines = [
-        "| Subagent Role | Model Tier (`invoke_subagent`) | Purpose |",
-        "| :--- | :--- | :--- |",
-        f"| **Orchestrator (`/root`)** | `{orch.get('model', 'pro')}` | Intent interpretation, routing, cohesive seam scoping |"
-    ]
-    for aname, aconf in sorted(agents_conf.items()):
-        table_lines.append(f"| `{aname}` | `{aconf.get('model', 'flash')}` | Specialist persona execution |")
-        
-    agents_content = f"""{AUTO_GEN_HEADER_MD}
-# Autonomous Multi-Agent Protocol — {project.get('name', 'Repository')}
 
-**Charter:** The `/root` Orchestrator coordinates workflow for {project.get('name', 'this repository')} ({project.get('description', '')}). `/root` owns intent interpretation, task classification, routing, cohesive slicing, synthesis, and completion decisions. Specialized agents own planning, exploration, implementation, verification, review, and Git publishing.
+def compile_antigravity(config: dict, project: dict, guardrails_block: str,
+                        base_dir: Path) -> dict:
+    """Antigravity target: portable repository instructions and delegation syntax."""
+    agents = provider_agents(config, "antigravity") or provider_agents(config, "agy")
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    routing = "\n".join(
+        f"- `{name}`: model `{agent.get('model', 'flash')}`"
+        for name, agent in agents.items()
+    )
+    agy_content = f"""{AUTO_GEN_HEADER_MD}
+# Antigravity Delegation Adapter
 
-The primary optimization metric is:
-**Total resources required to reach a correct, validated, shippable result.**
-Avoid premature multi-agent ceremonies: use one capable owner by default, and spawn specialists only when they contribute new information, independent work, or independent evidence.
+{protocol}
 
----
+## Antigravity Dispatch Syntax
 
-## 1. Repository Invariants & Safety Guardrails
-{guardrails_block}
+When invoking `invoke_subagent`, set `TypeName: "self"` (or
+`TypeName: "research"` for read-only exploration), `Role` to the
+agent name, and `Model` according to this routing table. Include the
+compact dispatch contract and instruct the subagent to adopt the matching
+`agents/<role>.md` persona. Never send full conversation history.
 
-### Universal Operational Invariants:
-- **Subsystem Isolation**: Never combine disjoint subsystems in one implementation slice.
-- **Generated Assets Rule**: Never spawn an LLM agent to copy, diff, or patch generated build assets. Use deterministic build commands (`{project.get('build_sync_cmd', 'npm run build')}`).
-- **Strictly Non-Interactive Git**: Agents must never run interactive Git commands (`git add -p`, `git add -i`, `git rebase -i`).
-- **Zero Full-History Forks (`fork_turns = "none"`)**: Subagents must NEVER be spawned with full parent history. Child subagents receive only the Compact Dispatch Contract (≤ 1,500 tokens).
-- **Anti-Polling Invariant**: Never busy-poll or loop waiting for agents; rely on reactive wakeups or long timeouts (≥ 180s).
-- **Command Output Bounds**: Limit file reads (`sed -n`) to ≤60 lines. Limit `git diff` to `-U3`. Pipe broad test outputs to `tail -n 25`.
-- **Circuit Breakers**:
-  * *Implementer Failure Breaker:* Stop immediately after 2 failed attempts on the same issue; report blocker to `/root`.
-  * *Tool-Loop Ceilings:*
-    - `/root` Orchestrator: hard ceiling of 25 turns per task.
-    - Standard agents (`explorer`, `implementer`): soft warning at 10–12 tool calls, hard ceiling at 16–20.
-    - Mechanical (`quick-implementer`): hard ceiling at 8.
-    - Publishing (`commit-pusher`): hard maximum of 6 tool calls.
-
----
-
-## 2. Adaptive Task Routing
-
-`/root` classifies each incoming request into one of four tiers:
-
-{ROUTING_ASCII_DIAGRAM}
-
-### Tier 0 — Direct Orchestrator Task
-- **When:** Inspecting Git status, running asset sync, checking configs.
-- **Workflow:** `/root` executes directly in workspace without subagents.
-
-### Tier 1 — Surgical Change
-- **When:** 1 file or tightly localized edit; typos, simple helpers, isolated bug fixes.
-- **Workflow:** `quick-implementer` → runs focused unit check (`{project.get('focused_test_cmd', 'npm test -- {file}')}`) → complete.
-- **Rules:** No planner, no explorer, no validator by default.
-
-### Tier 2 — Cohesive Feature or Localized Bug
-- **When:** 1–3 tightly coupled files in a single subsystem; bug with known reproduction.
-- **Workflow:** `implementer` (owns cohesive seam + unit tests) → optional `code-reviewer` (if public contract/lifecycle changed).
-
-### Tier 3 — Cross-Subsystem / Architectural Change
-- **When:** Multiple subsystems, lifecycle/state changes, inter-service boundary redesign, high regression risk.
-- **Workflow:** `code-explorer` → `planner` (1–3 cohesive slices) → `implementer(s)` → `code-validator` → optional `code-reviewer`.
-
----
-
-## 3. Gemini / Antigravity Model & Dispatch Protocol
-
-### Subagent Dispatch Convention:
-When invoking subagents via `invoke_subagent`:
-1. Use `TypeName: "self"` (or `TypeName: "research"` for read-only exploration).
-2. Set `Role: "<agent-role>"` (e.g. `Role: "code-explorer"`, `Role: "implementer"`).
-3. Set `Model` according to the matrix below (`flash` or `pro`).
-4. In the `Prompt`, include the **Compact Dispatch Contract** and instruct the subagent to adopt the persona guidelines defined in `agents/<name>.md`.
-
-{chr(10).join(table_lines)}
-
----
-
-## 4. Inter-Agent Communication Contracts
-
-{COMMUNICATION_CONTRACTS_MD}
-
----
-
-## 5. Validation & Review Policies
-
-- **Validate New Risk, Not Re-Run Proof**: If the implementer verified focused unit tests to green, DO NOT re-run that command in `code-validator`. `code-validator` runs ONLY broader suites (`{project.get('full_test_cmd', 'npm test')}`) or builds (`{project.get('build_cmd', 'npm run build')}`).
-- **Risk-Based Review**: Invoke `code-reviewer` only for semantic risk (state machine, concurrency, boundaries, security, storage migrations, public contracts). Skip for pure DOM/CSS, presentation, formatting, or low-risk mechanical changes.
+{routing}
 """
-    settings = json.dumps({"_generated": "AUTO-GENERATED BY sync.py",
-                           "context": {"fileName": "GEMINI.md"}}, indent=2) + "\n"
-    return {gemini_file: agents_content, base_dir / ".gemini" / "settings.json": settings}
+    return {base_dir / "AGENTS.md": agy_content}
 
-def compile_antigravity(config: dict, project: dict, guardrails_block: str, base_dir: Path) -> dict:
-    """Conservative Antigravity target: portable repository instructions only."""
-    gemini = compile_gemini(config, project, guardrails_block, base_dir)
-    return {base_dir / "AGENTS.md": gemini[base_dir / "GEMINI.md"]}
+def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_dir: Path, scope: str) -> dict:
+    """Compiles canonical skills into provider-specific skills and prompts directories (.agents/skills/, .claude/skills/, .codex/prompts/). Returns map of file paths to contents."""
+    outputs = {}
+    if not skills_dir.exists():
+        return outputs
+        
+    for skill_path in skills_dir.iterdir():
+        if not skill_path.is_dir():
+            continue
+        skill_name = skill_path.name
+        
+        for file_path in skill_path.rglob("*"):
+            if not file_path.is_file():
+                continue
+            
+            content = read_canonical_source(base_dir, file_path.relative_to(base_dir))
+            content = interpolate_prompt(content, project, guardrails_block)
+            rel_path = file_path.relative_to(skill_path)
+            
+            if file_path.name == "SKILL.md":
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter = f"---{parts[1]}---\n"
+                    body = parts[2].lstrip()
+                    content = f"{frontmatter}\n{AUTO_GEN_HEADER_MD}\n{body}"
+                else:
+                    content = f"{AUTO_GEN_HEADER_MD}\n{content}"
+            
+            if scope in ("all", "antigravity", "agy"):
+                outputs[base_dir / ".agents" / "skills" / skill_name / rel_path] = content
+            if scope in ("all", "claude"):
+                outputs[base_dir / ".claude" / "skills" / skill_name / rel_path] = content
+            if scope in ("all", "codex") and file_path.name == "SKILL.md" and rel_path == Path("SKILL.md"):
+                outputs[base_dir / ".codex" / "prompts" / f"{skill_name}.md"] = content
+                
+    return outputs
 
 def detect_project_stack(target_dir: Path) -> dict:
     """
     Inspects target_dir and detects project stack, build/test commands, and forbidden paths.
-    Returns a dictionary suitable for generating config.toml.
+    Returns a dictionary suitable for generating .autonomous-dev-team.toml.
     """
     project_name = target_dir.resolve().name
     
@@ -617,7 +431,7 @@ def detect_project_stack(target_dir: Path) -> dict:
     ]) or list(target_dir.glob("*.py"))
     
     if is_python:
-        has_pytest = (target_dir / "pytest.ini").exists() or (target_dir / "tests").exists() or (target_dir / "test").exists()
+        has_pytest = (target_dir / "pytest.ini").exists() or (target_dir / "conftest.py").exists()
         focused_cmd = "python3 -m pytest {file}" if has_pytest else "python3 -m unittest {file}"
         full_cmd = "pytest" if has_pytest else "python3 -m unittest discover tests"
         
@@ -646,167 +460,63 @@ def detect_project_stack(target_dir: Path) -> dict:
         "subsystems": []
     }
 
-def generate_default_config_toml(stack_info: dict) -> str:
-    """Generates standard config.toml content pre-populated with detected stack information."""
-    forbidden_toml = ",\n  ".join([f'"{p}"' for p in stack_info.get("forbidden_paths", [])])
+def generate_project_config_toml(stack_info: dict, source_dir: Path = None, active_provider: str = "all") -> str:
+    """Tailor the canonical config's project section using TOML-safe values."""
+    base_dir = source_dir or Path(__file__).resolve().parent
+    canonical = read_canonical_source(base_dir, Path(CONFIG_NAME))
     
-    return f"""# ==============================================================================
-# AUTONOMOUS AGENT PROTOCOL CONFIGURATION
-# Single source of truth for repository invariants and multi-provider models.
-# Edit this file, then run `./sync.py` to regenerate provider-specific configs.
-# ==============================================================================
-
-active_provider = "all"  # "all" | "codex" | "claude" | "gemini" | "antigravity"
-
-[schema]
-name = "autonomous-dev-team"
-version = 1
-
-# ==============================================================================
-# PROJECT INVARIANTS (Compiled into agent instructions to prevent hallucinations)
-# ==============================================================================
-[project]
-name = "{stack_info.get('name', 'project')}"
-description = "{stack_info.get('description', 'Autonomous Multi-Agent Repository')}"
-
-# Paths that agents are strictly forbidden from editing, copying, or diffing directly.
-forbidden_paths = [
-  {forbidden_toml}
-]
-
-# Command to deterministically synchronize/build generated assets (replaces LLM asset editing).
-build_sync_cmd = "{stack_info.get('build_sync_cmd', '')}"
-
-# Focused unit test command template.
-# Agents interpolate {{file}} or {{test_name}} for narrow verification before handoff.
-focused_test_cmd = "{stack_info.get('focused_test_cmd', 'npm test -- {file}')}"
-
-# Broad verification suite command executed ONLY by code-validator when new risk is introduced.
-full_test_cmd = "{stack_info.get('full_test_cmd', 'npm test')}"
-
-# Build / compilation verification command (owned by code-validator).
-build_cmd = "{stack_info.get('build_cmd', '')}"
-
-# Subsystems to enforce strict architectural isolation (optional).
-# [[project.subsystems]]
-# name = "core"
-# path = "src/core/"
-# stack = "{stack_info.get('stack', 'Core')}"
-
-
-# ==============================================================================
-# OPENAI / CODEX CONFIGURATION
-# Generates .codex/config.toml and .codex/agents/*.toml
-# ==============================================================================
-[codex.orchestrator]
-model = "gpt-5.6-terra"
-reasoning_effort = "low"
-plan_mode_reasoning_effort = "medium"
-tool_output_token_limit = 2500
-model_auto_compact_token_limit = 45000
-
-[codex.agents.code-explorer]
-description = "Read-only repository scout for targeted discovery, producing structured Discovery Manifests."
-model = "gpt-5.6-luna"
-reasoning_effort = "low"
-
-[codex.agents.planner]
-description = "Repository-grounded engineering planner used ONLY for Tier 3 complex, architectural, or multi-subsystem changes."
-model = "gpt-5.6-sol"
-reasoning_effort = "low"
-
-[codex.agents.quick-implementer]
-description = "Low-cost surgical implementer for small, mechanical, single-file, low-risk edits."
-model = "gpt-5.6-luna"
-reasoning_effort = "low"
-
-[codex.agents.implementer]
-description = "Primary implementer for substantive features, owning complete behavioral seams and verifying unit tests to green."
-model = "gpt-5.6-sol"
-reasoning_effort = "low"
-
-[codex.agents.code-validator]
-description = "Independent verification runner for broad builds, integration suites, and cross-module checks. Validates new risk."
-model = "gpt-5.6-luna"
-reasoning_effort = "low"
-
-[codex.agents.code-reviewer]
-description = "Independent senior reviewer for high-risk diffs (lifecycle, concurrency, native bridges, public contracts, security)."
-model = "gpt-5.6-terra"
-reasoning_effort = "low"
-
-[codex.agents.commit-pusher]
-description = "Deterministic Git publishing agent used only after an explicit user request. Non-interactive path staging."
-model = "gpt-5.6-luna"
-reasoning_effort = "low"
-
-
-# ==============================================================================
-# ANTHROPIC / CLAUDE CODE CONFIGURATION
-# Generates CLAUDE.md with project guardrails and model routing guidance
-# ==============================================================================
-[claude.orchestrator]
-model = "claude-3-7-sonnet"
-thinking = "low"
-
-[claude.agents.code-explorer]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.planner]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.quick-implementer]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.implementer]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-[claude.agents.code-validator]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.code-reviewer]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.commit-pusher]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-
-# ==============================================================================
-# GOOGLE / GEMINI (ANTIGRAVITY / AGY) CONFIGURATION
-# Generates AGENTS.md & GEMINI.md with subagent tier enums (inherit, flash, flash_lite, pro)
-# ==============================================================================
-[gemini.orchestrator]
-model = "pro"
-reasoning = "low"
-
-[gemini.agents.code-explorer]
-model = "flash"
-
-[gemini.agents.planner]
-model = "pro"
-
-[gemini.agents.quick-implementer]
-model = "flash"
-
-[gemini.agents.implementer]
-model = "pro"
-
-[gemini.agents.code-validator]
-model = "flash"
-
-[gemini.agents.code-reviewer]
-model = "pro"
-
-[gemini.agents.commit-pusher]
-model = "flash"
-"""
+    provider_val = "antigravity" if active_provider == "agy" else active_provider
+    lines = canonical.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith("active_provider ="):
+            lines[i] = f'active_provider = "{provider_val}"\n'
+            break
+    canonical = "".join(lines)
+    
+    tomllib.loads(canonical)
+    values = {
+        "name": stack_info.get("name", "project"),
+        "description": stack_info.get("description", "Autonomous Multi-Agent Repository"),
+        "forbidden_paths": stack_info.get("forbidden_paths", []),
+        "build_sync_cmd": stack_info.get("build_sync_cmd", ""),
+        "focused_test_cmd": stack_info.get("focused_test_cmd", "npm test -- {file}"),
+        "full_test_cmd": stack_info.get("full_test_cmd", "npm test"),
+        "build_cmd": stack_info.get("build_cmd", ""),
+    }
+    lines = canonical.splitlines(keepends=True)
+    project_start = next((i for i, line in enumerate(lines) if line.strip() == "[project]"), None)
+    if project_start is None:
+        raise ValueError(f"Canonical {CONFIG_NAME} is missing [project]")
+    project_end = next(
+        (i for i in range(project_start + 1, len(lines)) if lines[i].strip().startswith("[")),
+        len(lines),
+    )
+    replacements = []
+    for key, value in values.items():
+        starts = [
+            i for i in range(project_start + 1, project_end)
+            if lines[i].split("=", 1)[0].strip() == key and "=" in lines[i]
+        ]
+        if len(starts) != 1:
+            raise ValueError(f"Canonical {CONFIG_NAME} must define [project].{key} exactly once")
+        start = starts[0]
+        end = None
+        for candidate_end in range(start + 1, project_end + 1):
+            try:
+                parsed = tomllib.loads("[project]\n" + "".join(lines[start:candidate_end]))
+            except tomllib.TOMLDecodeError:
+                continue
+            if key in parsed.get("project", {}):
+                end = candidate_end
+                break
+        if end is None:
+            raise ValueError(f"Canonical {CONFIG_NAME} has an invalid [project].{key} assignment")
+        replacements.append((start, end, f"{key} = {json.dumps(value, ensure_ascii=False)}\n"))
+    for start, end, replacement in reversed(replacements):
+        lines[start:end] = [replacement]
+    rendered = "".join(lines)
+    tomllib.loads(rendered)
+    return rendered
 
 def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     """Generates a dict of Path -> content for all target provider files without writing them to disk."""
@@ -823,14 +533,16 @@ def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
         all_outputs.update(compile_codex(config, project, guardrails_block, base_dir, agents_dir))
     if provider in ("all", "claude"):
         all_outputs.update(compile_claude(config, project, guardrails_block, base_dir, agents_dir))
-    if provider in ("all", "gemini"):
-        all_outputs.update(compile_gemini(config, project, guardrails_block, base_dir))
     if provider in ("all", "antigravity", "agy"):
         all_outputs.update(compile_antigravity(config, project, guardrails_block, base_dir))
+        
+    skills_dir = base_dir / "skills"
+    all_outputs.update(compile_skills(project, guardrails_block, base_dir, skills_dir, provider))
         
     return all_outputs
 
 def run_sync(base_dir: Path, provider_override: str = None):
+    """Synchronizes all target provider configurations, writes generated files, prunes stale artifacts, and updates the manifest."""
     print("Synchronizing Multi-Provider Autonomous Agent Protocol...")
     outputs = generate_all_outputs(base_dir, provider_override)
     manifest_path = base_dir / MANIFEST_NAME
@@ -850,38 +562,37 @@ def run_sync(base_dir: Path, provider_override: str = None):
         if stale and stale.is_file() and "AUTO-GENERATED BY sync.py" in stale.read_text(encoding="utf-8"):
             stale.unlink()
     
-    codex_count = 0
+    codex_agent_count = 0
     claude_updated = False
-    gemini_updated = False
     antigravity_updated = False
     
     for fpath, content in outputs.items():
         fpath.parent.mkdir(parents=True, exist_ok=True)
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)
-        if ".codex" in str(fpath):
-            codex_count += 1
+        if ".codex/agents" in fpath.as_posix():
+            codex_agent_count += 1
         elif fpath.name == "CLAUDE.md":
             claude_updated = True
-        elif fpath.name == "GEMINI.md":
-            gemini_updated = True
         elif fpath.name == "AGENTS.md":
             antigravity_updated = True
     manifest_path.write_text(json.dumps({"schema": SCHEMA_NAME, "version": SCHEMA_VERSION,
                                          "files": sorted(current | preserved)}, indent=2) + "\n", encoding="utf-8")
             
-    if codex_count > 0:
-        print(f"  ✓ Codex: Compiled {codex_count - 1} agents into .codex/")
+    if codex_agent_count > 0:
+        print(f"  ✓ Codex: Compiled {codex_agent_count} agents into .codex/")
     if claude_updated:
         print("  ✓ Claude Code: Generated CLAUDE.md")
-    if gemini_updated:
-        print("  ✓ Gemini CLI: Generated GEMINI.md and .gemini/settings.json")
     if antigravity_updated:
-        print("  ✓ Antigravity: Generated conservative AGENTS.md guidance")
+        print("  ✓ Antigravity: Generated AGENTS.md")
+    
+    skills_count = sum(1 for p in current if "/skills/" in str(p) or "/prompts/" in str(p))
+    if skills_count > 0:
+        print(f"  ✓ Skills: Compiled canonical skills to providers")
         
     print("✓ Synchronization complete.\n")
 
-def run_check(base_dir: Path, provider_override: str = None) -> int:
+def run_check(base_dir: Path, provider_override: str = None, quiet: bool = False) -> int:
     """Checks generated files and their ownership manifest. Returns 0 if matching."""
     outputs = generate_all_outputs(base_dir, provider_override)
     mismatched = []
@@ -912,37 +623,97 @@ def run_check(base_dir: Path, provider_override: str = None) -> int:
                  and managed_path(base_dir, path).exists()]
                 
     if not missing and not mismatched and not stale:
-        print(f"✓ All provider configurations are in sync with {CONFIG_NAME} and agents/.")
+        if not quiet:
+            print(f"✓ All provider configurations are in sync with {CONFIG_NAME} and agents/.")
         return 0
     else:
-        print("Error: Provider configurations are out of sync!")
-        if missing:
-            print("  Missing files:")
-            for m in missing:
-                print(f"    - {m}")
-        if mismatched:
-            print("  Out-of-date files:")
-            for m in mismatched:
-                print(f"    - {m}")
-        if stale:
-            print("  Stale managed files:")
-            for item in stale:
-                print(f"    - {item}")
-        print("\nRun './sync.py' to regenerate provider files.")
+        if not quiet:
+            print("Error: Provider configurations are out of sync!")
+            if missing:
+                print("  Missing files:")
+                for m in missing:
+                    print(f"    - {m}")
+            if mismatched:
+                print("  Out-of-date files:")
+                for m in mismatched:
+                    print(f"    - {m}")
+            if stale:
+                print("  Stale managed files:")
+                for item in stale:
+                    print(f"    - {item}")
+            print("\nRun './sync.py' to regenerate provider files.")
         return 1
 
-def run_init(target_dir: Path, provider_override: str = None):
+PROVIDER_DISPLAY_NAMES = {
+    "antigravity": "Google Antigravity",
+    "agy": "Google Antigravity",
+    "claude": "Claude Code",
+    "codex": "Codex",
+    "all": "All Providers (Codex, Claude Code, Google Antigravity)",
+}
+
+def detect_runtime_provider() -> str | None:
+    """Detects runtime agent environment from environment variables."""
+    if any(k in os.environ for k in ("ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID", "ANTIGRAVITY_LS_ADDRESS")):
+        return "antigravity"
+    if any(k in os.environ for k in ("CLAUDE_CODE", "CLAUDECODE", "CLAUDE_SESSION_ID", "CLAUDE_PROJECT_DIR", "CLAUDE_CONVERSATION_ID")):
+        return "claude"
+    if any(k in os.environ for k in ("CODEX_CLI", "CODEX_THREAD_ID", "CODEX_SANDBOX")):
+        return "codex"
+    return None
+
+def inspect_team(base_dir: Path, provider_override: str = None) -> int:
+    """Inspects and prints the active provider configuration, setup sync status, and dev team roster."""
+    config_path = resolve_config_path(base_dir)
+    config = load_config(config_path)
+    active_prov = provider_override or detect_runtime_provider() or config.get("active_provider", "all")
+    if active_prov == "agy":
+        active_prov = "antigravity"
+    scope = active_prov
+
+    check_code = run_check(base_dir, provider_override, quiet=True)
+    status_str = "✓ In sync" if check_code == 0 else "⚠ Out of sync (run './sync.py' to update)"
+
+    display_name = PROVIDER_DISPLAY_NAMES.get(active_prov, active_prov)
+    print("==============================================================================")
+    print("Autonomous Dev Team — Provider & Setup Status")
+    print("==============================================================================")
+    print(f"  Configuration File : {CONFIG_NAME}")
+    print(f"  Active Provider    : {display_name} (setting: {active_prov})")
+    print(f"  Setup Sync Status  : {status_str}")
+    print()
+
+    target_providers = ["antigravity", "claude", "codex"] if scope == "all" else [scope]
+    for prov in target_providers:
+        prov_name = PROVIDER_DISPLAY_NAMES.get(prov, prov)
+        agents = provider_agents(config, prov)
+        if prov == "antigravity" and not agents:
+            agents = provider_agents(config, "agy")
+        orch = config.get(prov, {}).get("orchestrator", {})
+        orch_model = orch.get("model", "inherit")
+        orch_effort = orch.get("reasoning", orch.get("reasoning_effort", orch.get("thinking", "none")))
+
+        rows = [("orchestrator (/root)", f"model `{orch_model}`", orch_effort)]
+        for agent_name, agent_cfg in agents.items():
+            model = agent_cfg.get("model", "inherit")
+            effort = agent_cfg.get("reasoning", agent_cfg.get("reasoning_effort", agent_cfg.get("thinking", orch_effort)))
+            rows.append((agent_name, f"model `{model}`", effort))
+
+        max_role_len = max(len(r[0]) for r in rows)
+        max_model_len = max(len(r[1]) for r in rows)
+
+        print(f"[{prov_name} Team Roster]")
+        for role, model_str, effort in rows:
+            print(f"  • {role:<{max_role_len}} : {model_str:<{max_model_len}}  (reasoning: `{effort}`)")
+        print()
+
+    return check_code
+
+def run_init(target_dir: Path, provider_override: str = None, source_dir: Path = None):
     """Initializes the namespaced config if missing, then compiles provider files."""
     config_path = target_dir / CONFIG_NAME
     print(f"Initializing Autonomous Multi-Agent Protocol in: {target_dir.resolve()}")
     
-    legacy_path = target_dir / LEGACY_CONFIG_NAME
-    if not config_path.exists() and legacy_path.exists() and is_legacy_config(load_config(legacy_path)):
-        legacy_content = legacy_path.read_text(encoding="utf-8").rstrip()
-        schema = (f'\n\n[schema]\nname = "{SCHEMA_NAME}"\n'
-                  f'version = {SCHEMA_VERSION}\n')
-        config_path.write_text(legacy_content + schema, encoding="utf-8")
-        print(f"  ✓ Migrated legacy {LEGACY_CONFIG_NAME} to {CONFIG_NAME}; legacy file preserved.")
     if config_path.exists():
         print(f"  ℹ Existing {CONFIG_NAME} found in {target_dir.resolve()}. Preserving settings.")
     else:
@@ -954,7 +725,7 @@ def run_init(target_dir: Path, provider_override: str = None):
         if stack_info.get("build_cmd"):
             print(f"    - Build command: {stack_info.get('build_cmd')}")
             
-        config_content = generate_default_config_toml(stack_info)
+        config_content = generate_project_config_toml(stack_info, source_dir=source_dir, active_provider=provider_override or "all")
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
         print(f"  ✓ Generated tailored {CONFIG_NAME} for {stack_info.get('name')}")
@@ -967,7 +738,9 @@ def main():
                         help=f"Initialize {CONFIG_NAME} with auto-detected stack in target directory (defaults to current dir) and compile.")
     parser.add_argument("--check", action="store_true",
                         help=f"Check whether generated provider files are in sync with {CONFIG_NAME} (exits with 0 if up-to-date, 1 if out-of-sync).")
-    parser.add_argument("--provider", choices=["all", "codex", "claude", "gemini", "antigravity", "agy"], default=None,
+    parser.add_argument("--team", "--status", action="store_true", dest="team",
+                        help="Display the active provider configuration, setup sync status, and dev team roster.")
+    parser.add_argument("--provider", choices=["all", "codex", "claude", "antigravity", "agy"], default=None,
                         help="Override active provider.")
     parser.add_argument("--dir", default=None, metavar="DIR",
                         help=f"Directory containing {CONFIG_NAME} and agents/ (defaults to script directory).")
@@ -976,9 +749,11 @@ def main():
 
     base_dir = Path(args.dir).resolve() if args.dir else Path(__file__).resolve().parent
 
-    if args.init is not None:
+    if args.team:
+        sys.exit(inspect_team(base_dir, args.provider))
+    elif args.init is not None:
         target_dir = Path(args.init).resolve()
-        run_init(target_dir, args.provider)
+        run_init(target_dir, args.provider, source_dir=base_dir)
     elif args.check:
         sys.exit(run_check(base_dir, args.provider))
     else:

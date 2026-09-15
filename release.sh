@@ -16,7 +16,7 @@ fi
 if [[ -n $(git status --porcelain) ]]; then
   fail "working tree must be clean"
 fi
-if [[ ! -f install.sh || ! -f sync.py || ! -d agents ]]; then
+if [[ ! -f install.sh || ! -f sync.py || ! -d agents || ! -d skills ]]; then
   fail "run this command from the autonomous-dev-team repository root"
 fi
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required"

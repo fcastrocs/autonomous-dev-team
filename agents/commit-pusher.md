@@ -1,8 +1,5 @@
 # Commit Pusher — Safe Deterministic Git Publishing
 
-Begin your first user-visible response exactly once with:
-`Custom commit-pusher active.`
-
 Publish completed, verified work to Git. Do not implement, repair, refactor, reformat, or otherwise alter product code.
 
 ## Core Mandates & Safeguards

@@ -4,7 +4,7 @@
 # Edit this file, then run `./sync.py` to regenerate provider-specific configs.
 # ==============================================================================
 
-active_provider = "all"  # "all" | "codex" | "claude" | "gemini" | "antigravity"
+active_provider = "all"  # "all" | "codex" | "claude" | "antigravity"
 
 [schema]
 name = "autonomous-dev-team"
@@ -15,7 +15,7 @@ version = 1
 # ==============================================================================
 [project]
 name = "autonomous-dev-team"
-description = "Multi-provider autonomous agent protocol and configuration engine for Codex, Claude Code, and Gemini"
+description = "Multi-provider autonomous agent protocol and configuration engine for Codex, Claude Code, and Google Antigravity"
 
 # Paths that agents are strictly forbidden from editing, copying, or diffing directly.
 # Agents are instructed to exclude these from file searches and never propose edits to them.
@@ -42,14 +42,15 @@ build_cmd = "python3 sync.py --check"
 
 # ==============================================================================
 # OPENAI / CODEX CONFIGURATION
-# Generates .codex/config.toml and .codex/agents/*.toml
+# Generates .codex/config.toml, .codex/agents/*.toml, and .codex/prompts/*.md
 # ==============================================================================
 [codex.orchestrator]
 model = "gpt-5.6-terra"
 reasoning_effort = "low"
 plan_mode_reasoning_effort = "medium"
-tool_output_token_limit = 2500
+tool_output_token_limit = 6000
 model_auto_compact_token_limit = 45000
+model_auto_compact_token_limit_scope = "body_after_prefix"
 
 [codex.agents.code-explorer]
 description = "Read-only repository scout for targeted discovery, producing structured Discovery Manifests."
@@ -59,7 +60,7 @@ reasoning_effort = "low"
 [codex.agents.planner]
 description = "Repository-grounded engineering planner used ONLY for Tier 3 complex, architectural, or multi-subsystem changes."
 model = "gpt-5.6-sol"
-reasoning_effort = "low"
+reasoning_effort = "medium"
 
 [codex.agents.quick-implementer]
 description = "Low-cost surgical implementer for small, mechanical, single-file, low-risk edits."
@@ -69,17 +70,22 @@ reasoning_effort = "low"
 [codex.agents.implementer]
 description = "Primary implementer for substantive features, owning complete behavioral seams and verifying unit tests to green."
 model = "gpt-5.6-sol"
-reasoning_effort = "low"
+reasoning_effort = "medium"
+
+[codex.agents.diagnostician]
+description = "Evidence-driven bug diagnostician that reproduces failures and returns a bounded root-cause manifest without editing files."
+model = "gpt-5.6-terra"
+reasoning_effort = "medium"
 
 [codex.agents.code-validator]
 description = "Independent verification runner for broad builds, integration suites, and cross-module checks. Validates new risk."
-model = "gpt-5.6-luna"
+model = "gpt-5.6-terra"
 reasoning_effort = "low"
 
 [codex.agents.code-reviewer]
 description = "Independent senior reviewer for high-risk diffs (lifecycle, concurrency, native bridges, public contracts, security)."
 model = "gpt-5.6-terra"
-reasoning_effort = "low"
+reasoning_effort = "medium"
 
 [codex.agents.commit-pusher]
 description = "Deterministic Git publishing agent used only after an explicit user request. Non-interactive path staging."
@@ -89,7 +95,7 @@ reasoning_effort = "low"
 
 # ==============================================================================
 # ANTHROPIC / CLAUDE CODE CONFIGURATION
-# Generates CLAUDE.md with project guardrails and model routing guidance
+# Generates CLAUDE.md, .claude/agents/*.md, and .claude/skills/*
 # ==============================================================================
 [claude.orchestrator]
 model = "claude-3-7-sonnet"
@@ -111,9 +117,13 @@ thinking = "none"
 model = "claude-3-7-sonnet"
 thinking = "medium"
 
+[claude.agents.diagnostician]
+model = "claude-3-7-sonnet"
+thinking = "medium"
+
 [claude.agents.code-validator]
-model = "claude-3-5-haiku"
-thinking = "none"
+model = "claude-3-7-sonnet"
+thinking = "low"
 
 [claude.agents.code-reviewer]
 model = "claude-3-7-sonnet"
@@ -125,30 +135,42 @@ thinking = "none"
 
 
 # ==============================================================================
-# GOOGLE / GEMINI (ANTIGRAVITY / AGY) CONFIGURATION
-# Generates AGENTS.md & GEMINI.md with subagent tier enums (inherit, flash, flash_lite, pro)
+# GOOGLE ANTIGRAVITY (AGY) CONFIGURATION
+# Generates AGENTS.md (with subagent tier enums) and .agents/skills/*
+# Configured for Gemini 3.8 / 3.7 Flash with reasoning for credit savings and accuracy.
 # ==============================================================================
-[gemini.orchestrator]
-model = "pro"
+[antigravity.orchestrator]
+model = "flash"
+reasoning = "medium"
+
+[antigravity.agents.code-explorer]
+model = "flash"
 reasoning = "low"
 
-[gemini.agents.code-explorer]
+[antigravity.agents.planner]
 model = "flash"
+reasoning = "high"
 
-[gemini.agents.planner]
-model = "pro"
-
-[gemini.agents.quick-implementer]
+[antigravity.agents.quick-implementer]
 model = "flash"
+reasoning = "low"
 
-[gemini.agents.implementer]
-model = "pro"
-
-[gemini.agents.code-validator]
+[antigravity.agents.implementer]
 model = "flash"
+reasoning = "medium"
 
-[gemini.agents.code-reviewer]
-model = "pro"
-
-[gemini.agents.commit-pusher]
+[antigravity.agents.diagnostician]
 model = "flash"
+reasoning = "medium"
+
+[antigravity.agents.code-validator]
+model = "flash"
+reasoning = "low"
+
+[antigravity.agents.code-reviewer]
+model = "flash"
+reasoning = "high"
+
+[antigravity.agents.commit-pusher]
+model = "flash"
+reasoning = "low"
