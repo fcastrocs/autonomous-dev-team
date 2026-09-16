@@ -23,7 +23,7 @@ Autonomous Dev Team organizes specialized agents into a cohesive engineering tea
 | **PR Test Analyzer** | `pr-test-analyzer` | Maps changed behavior to meaningful success, error, and boundary tests and assesses assertion quality and flakiness. |
 | **Silent Failure Hunter** | `silent-failure-hunter` | Traces swallowed errors, false-success paths, and missing failure propagation or observability. |
 
-> **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers. `/team` is a deterministic fast path: the agent runs exactly one applicable roster command without building, searching, or delegating first.
+> **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers. `/team` is a direct `sync.py` argument, never a flag for `npm`, Gradle, Make, package scripts, or build commands. The agent runs exactly one roster command without probing, building, searching, or delegating first.
 
 ## Requirements
 

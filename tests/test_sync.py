@@ -490,7 +490,9 @@ class TestSyncCompiler(unittest.TestCase):
         )
         for content in adapters:
             self.assertIn("Highest-priority `/team` fast path", content)
-            self.assertIn("run exactly one applicable command", content)
+            self.assertIn("treat `--team` exclusively as a direct `sync.py` argument", content)
+            self.assertIn("`npm run build --team` is invalid", content)
+            self.assertIn("without a fallback command", content)
             self.assertIn("scope is at most one implementation file plus one directly related test or configuration file", content)
             self.assertIn("never remove a required correctness gate", content)
             self.assertIn("permit multiple gates for genuinely distinct risks", content)
@@ -613,10 +615,12 @@ class TestSyncCompiler(unittest.TestCase):
         )
         for spath in team_paths:
             content = outputs[spath]
-            self.assertIn("Run exactly one inspection command", content)
+            self.assertIn("Run exactly one of these literal commands", content)
             self.assertIn("python3 .autonomous-dev-team/sync.py --team", content)
             self.assertIn("python3 sync.py --team", content)
-            self.assertIn("Do not run the project's build command", content)
+            self.assertIn("`npm run build --team` is invalid", content)
+            self.assertIn("Do not probe for files first", content)
+            self.assertIn("without running a fallback or diagnostic command", content)
             self.assertIn("Presentation Instructions", content)
             self.assertIn("Configuration File", content)
             self.assertIn("Active Provider", content)

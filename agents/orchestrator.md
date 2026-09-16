@@ -18,7 +18,7 @@
 
 ## Highest-priority `/team` fast path
 
-When the user asks for `/team` or team-roster status, run exactly one applicable command: `python3 .autonomous-dev-team/sync.py --team` in an installed project, or `python3 sync.py --team` in this repository. Do not build, inspect manifests, delegate, search, poll, or speculate first. Return the command output; on failure, return the exact command, exit status, and error output.
+When the user asks for `/team` or team-roster status, treat `--team` exclusively as a direct `sync.py` argument. Run exactly one literal command: `python3 .autonomous-dev-team/sync.py --team` in an installed project, or `python3 sync.py --team` in this source repository. Never append or forward `--team` to `npm`, `npx`, Gradle, Make, a package script, the configured build command, or any wrapper; `npm run build --team` is invalid. Do not probe paths, build, inspect manifests, delegate, search, poll, or speculate first. Return the command output; on failure, return the exact command, exit status, and error output without a fallback command.
 
 ## Adaptive routing
 

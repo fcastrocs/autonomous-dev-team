@@ -1,18 +1,20 @@
 ---
 name: team
-description: Inspect the active provider configuration, setup sync status, and dev team roster.
+description: Inspect provider and roster status by running sync.py --team directly; never forward --team to a build or package command.
 ---
 
 # Dev Team Status
 
 Inspect the active provider configuration, setup sync status, and dev team roster.
 
-Run exactly one inspection command, choosing the first path that exists:
+`--team` is an argument to this project's `sync.py`, not a generic build flag. Run exactly one of these literal commands based on the already-known repository layout:
 
 1. Installed project: `python3 .autonomous-dev-team/sync.py --team`
 2. This source repository: `python3 sync.py --team`
 
-Do not run the project's build command, search the repository, inspect agent files, or schedule a wait before executing the inspection command. The command is synchronous; report its output when it exits.
+Do not probe for files first. Never append or forward `--team` to `npm`, `npx`, Gradle, Make, a package script, the configured build command, or any other wrapper; `npm run build --team` is invalid. Do not build, search, inspect agent files, delegate, or schedule a wait before executing the inspection command.
+
+The inspection command is synchronous. Report its output when it exits. If it fails, report that exact command, exit status, and error output without running a fallback or diagnostic command.
 
 ## Presentation Instructions
 
