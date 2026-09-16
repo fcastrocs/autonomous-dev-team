@@ -561,20 +561,31 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(ret, 1)
             self.assertIn("⚠ Out of sync", buf.getvalue())
 
-    def test_team_skill_generation(self):
+    def test_skill_generation(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
-        
-        agy_skill = BASE_DIR / ".agents" / "skills" / "team" / "SKILL.md"
-        claude_skill = BASE_DIR / ".claude" / "skills" / "team" / "SKILL.md"
-        codex_skill = BASE_DIR / ".codex" / "prompts" / "team.md"
-        
-        self.assertIn(agy_skill, outputs)
-        self.assertIn(claude_skill, outputs)
-        self.assertIn(codex_skill, outputs)
-        
-        for spath in (agy_skill, claude_skill, codex_skill):
+        skill_names = {
+            "team", "agent-introspection-debugging", "documentation-lookup",
+            "verification-loop", "agent-sort", "eval-harness", "tdd-workflow",
+            "security-review", "coding-standards",
+        }
+
+        for skill_name in skill_names:
+            paths = (
+                BASE_DIR / ".agents" / "skills" / skill_name / "SKILL.md",
+                BASE_DIR / ".claude" / "skills" / skill_name / "SKILL.md",
+                BASE_DIR / ".codex" / "prompts" / f"{skill_name}.md",
+            )
+            for skill_path in paths:
+                self.assertIn(skill_path, outputs)
+                self.assertTrue(outputs[skill_path].startswith(f"---\nname: {skill_name}\n"))
+
+        team_paths = (
+            BASE_DIR / ".agents" / "skills" / "team" / "SKILL.md",
+            BASE_DIR / ".claude" / "skills" / "team" / "SKILL.md",
+            BASE_DIR / ".codex" / "prompts" / "team.md",
+        )
+        for spath in team_paths:
             content = outputs[spath]
-            self.assertTrue(content.startswith("---\nname: team\n"))
             self.assertIn("Run exactly one inspection command", content)
             self.assertIn("python3 .autonomous-dev-team/sync.py --team", content)
             self.assertIn("python3 sync.py --team", content)
@@ -590,6 +601,16 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn("Orchestrator", content)
             self.assertIn('Never use "Specialist"', content)
             self.assertIn("Do NOT summarize, abbreviate, or omit roles from the roster", content)
+
+        self.assertFalse(any(path.name == "openai.yaml" for path in outputs))
+        self.assertFalse(any(path.name == "openai.yaml" for path in (BASE_DIR / "skills").rglob("*")))
+
+    def test_codex_scope_generates_implicit_and_explicit_skills(self):
+        outputs = sync.generate_all_outputs(BASE_DIR, "codex")
+        for skill_name in ("team", "verification-loop", "security-review"):
+            self.assertIn(BASE_DIR / ".agents" / "skills" / skill_name / "SKILL.md", outputs)
+            self.assertIn(BASE_DIR / ".codex" / "prompts" / f"{skill_name}.md", outputs)
+        self.assertFalse(any(path.parts[-3:-1] == (".claude", "skills") for path in outputs))
 
     def test_detect_runtime_provider(self):
         for var in ("ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID", "ANTIGRAVITY_LS_ADDRESS"):

@@ -377,7 +377,7 @@ compact dispatch contract and instruct the subagent to adopt the matching
     return {base_dir / "AGENTS.md": agy_content}
 
 def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_dir: Path, scope: str) -> dict:
-    """Compiles canonical skills into provider-specific skills and prompts directories (.agents/skills/, .claude/skills/, .codex/prompts/). Returns map of file paths to contents."""
+    """Compile canonical skills for native discovery and explicit Codex prompts."""
     outputs = {}
     if not skills_dir.exists():
         return outputs
@@ -404,7 +404,7 @@ def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_
                 else:
                     content = f"{AUTO_GEN_HEADER_MD}\n{content}"
             
-            if scope in ("all", "antigravity", "agy"):
+            if scope in ("all", "antigravity", "agy", "codex"):
                 outputs[base_dir / ".agents" / "skills" / skill_name / rel_path] = content
             if scope in ("all", "claude"):
                 outputs[base_dir / ".claude" / "skills" / skill_name / rel_path] = content
