@@ -7,8 +7,12 @@ description: Inspect the active provider configuration, setup sync status, and d
 
 Inspect the active provider configuration, setup sync status, and dev team roster.
 
-Execute the build sync inspection command:
-`{BUILD_SYNC_CMD} --team`
+Run exactly one inspection command, choosing the first path that exists:
+
+1. Installed project: `python3 .autonomous-dev-team/sync.py --team`
+2. This source repository: `python3 sync.py --team`
+
+Do not run the project's build command, search the repository, inspect agent files, or schedule a wait before executing the inspection command. The command is synchronous; report its output when it exits.
 
 ## Presentation Instructions
 

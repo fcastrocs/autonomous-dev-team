@@ -575,8 +575,10 @@ class TestSyncCompiler(unittest.TestCase):
         for spath in (agy_skill, claude_skill, codex_skill):
             content = outputs[spath]
             self.assertTrue(content.startswith("---\nname: team\n"))
-            self.assertIn("Execute the build sync inspection command:", content)
-            self.assertIn("--team`", content)
+            self.assertIn("Run exactly one inspection command", content)
+            self.assertIn("python3 .autonomous-dev-team/sync.py --team", content)
+            self.assertIn("python3 sync.py --team", content)
+            self.assertIn("Do not run the project's build command", content)
             self.assertIn("Presentation Instructions", content)
             self.assertIn("Configuration File", content)
             self.assertIn("Active Provider", content)
