@@ -51,14 +51,16 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotIn("GEMINI.md", output_names)
         self.assertNotIn("orchestrator.toml", output_names)
         
-        # Verify all eight agents generated for codex
+        # Verify all thirteen agents generated for codex
         agent_names = ["code-explorer.toml", "planner.toml", "implementer.toml", 
                        "quick-implementer.toml", "diagnostician.toml", "code-validator.toml", 
-                       "code-reviewer.toml", "commit-pusher.toml"]
+                       "code-reviewer.toml", "commit-pusher.toml", "harness-optimizer.toml",
+                       "agent-evaluator.toml", "security-reviewer.toml", "pr-test-analyzer.toml",
+                       "silent-failure-hunter.toml"]
         for aname in agent_names:
             self.assertIn(aname, output_names, f"Missing Codex agent: {aname}")
             
-        self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 8)
+        self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 13)
             
         # Verify no unreplaced placeholders remain in any output
         placeholder_pattern = re.compile(r'\{[A-Z0-9_]+\}')
@@ -197,8 +199,29 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertEqual(parsed["project"]["name"], stack["name"])
         self.assertEqual(parsed["project"]["description"], stack["description"])
         for provider in ("codex", "claude", "antigravity"):
-            self.assertEqual(len(parsed[provider]["agents"]), 8)
+            self.assertEqual(len(parsed[provider]["agents"]), 13)
             self.assertIn("diagnostician", parsed[provider]["agents"])
+            for role in ("harness-optimizer", "agent-evaluator", "security-reviewer",
+                         "pr-test-analyzer", "silent-failure-hunter"):
+                self.assertIn(role, parsed[provider]["agents"])
+        self.assertEqual(parsed["codex"]["orchestrator"]["model"], "gpt-5.6-sol")
+        self.assertEqual(parsed["codex"]["orchestrator"]["reasoning_effort"], "low")
+        expected_reasoning = {
+            "harness-optimizer": "high",
+            "agent-evaluator": "medium",
+            "security-reviewer": "high",
+            "pr-test-analyzer": "medium",
+            "silent-failure-hunter": "medium",
+        }
+        for role, reasoning in expected_reasoning.items():
+            expected_codex_model = "gpt-5.6-sol" if role == "harness-optimizer" else "gpt-5.6-terra"
+            self.assertEqual(parsed["codex"]["agents"][role]["model"], expected_codex_model)
+            expected_codex_reasoning = "high" if role == "security-reviewer" else "medium"
+            self.assertEqual(parsed["codex"]["agents"][role]["reasoning_effort"], expected_codex_reasoning)
+            self.assertEqual(parsed["claude"]["agents"][role]["model"], "claude-3-7-sonnet")
+            self.assertEqual(parsed["claude"]["agents"][role]["thinking"], reasoning)
+            self.assertEqual(parsed["antigravity"]["agents"][role]["model"], "flash")
+            self.assertEqual(parsed["antigravity"]["agents"][role]["reasoning"], reasoning)
 
     def test_missing_canonical_config_fails_clearly(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -402,6 +425,8 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertIn("[agents.code-explorer]", codex)
         self.assertNotIn("[agents]\n", codex)
         self.assertNotIn("[agents.orchestrator]", codex)
+        self.assertIn('model = "gpt-5.6-sol"', codex)
+        self.assertIn('model_reasoning_effort = "low"', codex)
         self.assertIn("tool_output_token_limit = 6000", codex)
         self.assertIn("model_auto_compact_token_limit = 45000", codex)
         self.assertIn('model_auto_compact_token_limit_scope = "body_after_prefix"', codex)
@@ -413,15 +438,40 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn('model_reasoning_effort = "low"', agent)
         validator = outputs[BASE_DIR / ".codex" / "agents" / "code-validator.toml"]
         self.assertIn('model = "gpt-5.6-terra"', validator)
+        expected_codex = {
+            "harness-optimizer": ("gpt-5.6-sol", "medium"),
+            "agent-evaluator": ("gpt-5.6-terra", "medium"),
+            "security-reviewer": ("gpt-5.6-terra", "high"),
+            "pr-test-analyzer": ("gpt-5.6-terra", "medium"),
+            "silent-failure-hunter": ("gpt-5.6-terra", "medium"),
+        }
+        for agent_name, (model, reasoning) in expected_codex.items():
+            agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
+            self.assertIn(f'model = "{model}"', agent)
+            self.assertIn(f'model_reasoning_effort = "{reasoning}"', agent)
         claude_md = outputs[BASE_DIR / "CLAUDE.md"]
         self.assertIn("Use Claude Code's native agent configuration", claude_md)
         self.assertNotIn("specialist", claude_md.lower())
         claude_agent = outputs[BASE_DIR / ".claude" / "agents" / "implementer.md"]
         self.assertTrue(claude_agent.startswith("---\nname: implementer\n"))
         self.assertIn("implementer agent for autonomous-dev-team", claude_agent)
+        expected_claude_reasoning = {
+            "harness-optimizer": "high",
+            "agent-evaluator": "medium",
+            "security-reviewer": "high",
+            "pr-test-analyzer": "medium",
+            "silent-failure-hunter": "medium",
+        }
+        for agent_name, reasoning in expected_claude_reasoning.items():
+            claude_agent = outputs[BASE_DIR / ".claude" / "agents" / f"{agent_name}.md"]
+            self.assertIn("model: claude-3-7-sonnet", claude_agent)
+            self.assertIn(f"reasoning effort: {reasoning}", claude_agent)
         agy_adapter = outputs[BASE_DIR / "AGENTS.md"]
         self.assertIn("# Antigravity Delegation Adapter", agy_adapter)
         self.assertIn("Role` to the\nagent name", agy_adapter)
+        for agent_name in ("harness-optimizer", "agent-evaluator", "security-reviewer",
+                           "pr-test-analyzer", "silent-failure-hunter"):
+            self.assertIn(f"- `{agent_name}`: model `flash`", agy_adapter)
         self.assertNotIn("specialist", agy_adapter.lower())
         self.assertNotIn("GEMINI.md", [p.name for p in outputs])
 

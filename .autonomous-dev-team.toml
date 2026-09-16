@@ -45,7 +45,7 @@ build_cmd = "python3 sync.py --check"
 # Generates .codex/config.toml, .codex/agents/*.toml, and .codex/prompts/*.md
 # ==============================================================================
 [codex.orchestrator]
-model = "gpt-5.6-terra"
+model = "gpt-5.6-sol"
 reasoning_effort = "low"
 plan_mode_reasoning_effort = "medium"
 tool_output_token_limit = 6000
@@ -92,6 +92,31 @@ description = "Deterministic Git publishing agent used only after an explicit us
 model = "gpt-5.6-luna"
 reasoning_effort = "low"
 
+[codex.agents.harness-optimizer]
+description = "Read-only evaluator of agent harnesses, prompts, routing, and context efficiency with evidence-backed recommendations."
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+
+[codex.agents.agent-evaluator]
+description = "Independent evaluator of agent outputs against dispatch contracts, evidence, and completion quality."
+model = "gpt-5.6-terra"
+reasoning_effort = "medium"
+
+[codex.agents.security-reviewer]
+description = "Focused read-only security reviewer for trust boundaries, credentials, authorization, and unsafe data flows."
+model = "gpt-5.6-terra"
+reasoning_effort = "high"
+
+[codex.agents.pr-test-analyzer]
+description = "Read-only reviewer mapping changed behavior to meaningful tests and assessing assertions, edge paths, and flakiness risk."
+model = "gpt-5.6-terra"
+reasoning_effort = "medium"
+
+[codex.agents.silent-failure-hunter]
+description = "Read-only specialist for swallowed errors, false-success paths, missing propagation, and observability gaps."
+model = "gpt-5.6-terra"
+reasoning_effort = "medium"
+
 
 # ==============================================================================
 # ANTHROPIC / CLAUDE CODE CONFIGURATION
@@ -132,6 +157,26 @@ thinking = "high"
 [claude.agents.commit-pusher]
 model = "claude-3-5-haiku"
 thinking = "none"
+
+[claude.agents.harness-optimizer]
+model = "claude-3-7-sonnet"
+thinking = "high"
+
+[claude.agents.agent-evaluator]
+model = "claude-3-7-sonnet"
+thinking = "medium"
+
+[claude.agents.security-reviewer]
+model = "claude-3-7-sonnet"
+thinking = "high"
+
+[claude.agents.pr-test-analyzer]
+model = "claude-3-7-sonnet"
+thinking = "medium"
+
+[claude.agents.silent-failure-hunter]
+model = "claude-3-7-sonnet"
+thinking = "medium"
 
 
 # ==============================================================================
@@ -174,3 +219,23 @@ reasoning = "high"
 [antigravity.agents.commit-pusher]
 model = "flash"
 reasoning = "low"
+
+[antigravity.agents.harness-optimizer]
+model = "flash"
+reasoning = "high"
+
+[antigravity.agents.agent-evaluator]
+model = "flash"
+reasoning = "medium"
+
+[antigravity.agents.security-reviewer]
+model = "flash"
+reasoning = "high"
+
+[antigravity.agents.pr-test-analyzer]
+model = "flash"
+reasoning = "medium"
+
+[antigravity.agents.silent-failure-hunter]
+model = "flash"
+reasoning = "medium"

@@ -17,6 +17,11 @@ Autonomous Dev Team organizes specialized agents into a cohesive engineering tea
 | **Code Validator** | `code-validator` | Independently verifies full test suites, packaging, builds, and regression risks. |
 | **Code Reviewer** | `code-reviewer` | Inspects semantic risks, architecture alignment, safety, and guardrail enforcement. |
 | **Commit Pusher** | `commit-pusher` | Manages Git operations, atomic commits, staging, and branch pushing safely. |
+| **Harness Optimizer** | `harness-optimizer` | Audits agent prompts, routing, context, and tool loops for measurable efficiency improvements. |
+| **Agent Evaluator** | `agent-evaluator` | Evaluates agent outputs against their dispatch contract, evidence, and completion criteria. |
+| **Security Reviewer** | `security-reviewer` | Performs focused read-only review of trust boundaries, credentials, authorization, and data flows. |
+| **PR Test Analyzer** | `pr-test-analyzer` | Maps changed behavior to meaningful success, error, and boundary tests and assesses assertion quality and flakiness. |
+| **Silent Failure Hunter** | `silent-failure-hunter` | Traces swallowed errors, false-success paths, and missing failure propagation or observability. |
 
 > **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers.
 
@@ -126,6 +131,8 @@ The root agent selects the smallest safe workflow tier for each task:
 - **Tier 2 (Feature / Fix)**: Cohesive features go to `implementer`; unknown-cause failures route first to `diagnostician`. Independent verification is owned by `code-validator`.
 - **Tier 3 (Architecture)**: `code-explorer` inspects, `planner` defines cohesive slices, implementers execute, and `code-validator` validates.
 
+The five evaluation roles are opt-in: route them only when harness efficiency, agent-output quality, security, changed-code test adequacy, or silent-failure behavior is specifically in scope.
+
 Context duplication is strictly minimized, polling loops are avoided, and verification remains proportional to risk.
 
 ## Configuration Example
@@ -136,7 +143,7 @@ Select active providers and models in `.autonomous-dev-team/config.toml`:
 active_provider = "codex"
 
 [codex.orchestrator]
-model = "gpt-5.6-terra"
+model = "gpt-5.6-sol"
 reasoning_effort = "low"
 ```
 
