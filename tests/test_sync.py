@@ -204,6 +204,9 @@ class TestSyncCompiler(unittest.TestCase):
             for role in ("harness-optimizer", "agent-evaluator", "security-reviewer",
                          "pr-test-analyzer", "silent-failure-hunter"):
                 self.assertIn(role, parsed[provider]["agents"])
+        self.assertEqual(parsed["codex"]["agents"]["implementer"]["reasoning_effort"], "medium")
+        self.assertEqual(parsed["claude"]["agents"]["implementer"]["thinking"], "medium")
+        self.assertEqual(parsed["antigravity"]["agents"]["implementer"]["reasoning"], "medium")
         self.assertEqual(parsed["codex"]["orchestrator"]["model"], "gpt-5.6-sol")
         self.assertEqual(parsed["codex"]["orchestrator"]["reasoning_effort"], "low")
         expected_reasoning = {
@@ -455,6 +458,9 @@ class TestSyncCompiler(unittest.TestCase):
         claude_agent = outputs[BASE_DIR / ".claude" / "agents" / "implementer.md"]
         self.assertTrue(claude_agent.startswith("---\nname: implementer\n"))
         self.assertIn("implementer agent for autonomous-dev-team", claude_agent)
+        self.assertIn("reasoning effort: medium", claude_agent)
+        self.assertIn("provider-configured `medium` reasoning effort", claude_agent)
+        self.assertNotIn("Default:** `low` reasoning effort", claude_agent)
         expected_claude_reasoning = {
             "harness-optimizer": "high",
             "agent-evaluator": "medium",
@@ -474,6 +480,27 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn(f"- `{agent_name}`: model `flash`", agy_adapter)
         self.assertNotIn("specialist", agy_adapter.lower())
         self.assertNotIn("GEMINI.md", [p.name for p in outputs])
+
+    def test_correctness_first_routing_contract_is_generated(self):
+        outputs = sync.generate_all_outputs(BASE_DIR, "all")
+        adapters = (
+            outputs[BASE_DIR / ".codex" / "config.toml"],
+            outputs[BASE_DIR / "CLAUDE.md"],
+            outputs[BASE_DIR / "AGENTS.md"],
+        )
+        for content in adapters:
+            self.assertIn("Highest-priority `/team` fast path", content)
+            self.assertIn("run exactly one applicable command", content)
+            self.assertIn("scope is at most one implementation file plus one directly related test or configuration file", content)
+            self.assertIn("never remove a required correctness gate", content)
+            self.assertIn("permit multiple gates for genuinely distinct risks", content)
+            self.assertIn("After 8 direct tool calls", content)
+            self.assertIn("after 12, replan or explain", content)
+            self.assertIn("Never report success while required verification is failing or incomplete", content)
+
+        implementer_prompt = (BASE_DIR / "agents" / "implementer.md").read_text(encoding="utf-8")
+        self.assertIn("provider-configured `medium` reasoning effort", implementer_prompt)
+        self.assertNotIn("Escalate to `medium` or `high`", implementer_prompt)
 
     def test_manifest_stale_cleanup_is_guarded(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -601,6 +628,17 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn("Orchestrator", content)
             self.assertIn('Never use "Specialist"', content)
             self.assertIn("Do NOT summarize, abbreviate, or omit roles from the roster", content)
+
+        agent_sort_paths = (
+            BASE_DIR / ".agents" / "skills" / "agent-sort" / "SKILL.md",
+            BASE_DIR / ".claude" / "skills" / "agent-sort" / "SKILL.md",
+            BASE_DIR / ".codex" / "prompts" / "agent-sort.md",
+        )
+        for spath in agent_sort_paths:
+            content = outputs[spath]
+            self.assertIn("first-pass correctness before token minimization", content)
+            self.assertIn("checkpoints govern work performed, not provider billing", content)
+            self.assertIn("separate gates for distinct risks", content)
 
         self.assertFalse(any(path.name == "openai.yaml" for path in outputs))
         self.assertFalse(any(path.name == "openai.yaml" for path in (BASE_DIR / "skills").rglob("*")))

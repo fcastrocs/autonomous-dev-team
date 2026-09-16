@@ -23,7 +23,7 @@ Autonomous Dev Team organizes specialized agents into a cohesive engineering tea
 | **PR Test Analyzer** | `pr-test-analyzer` | Maps changed behavior to meaningful success, error, and boundary tests and assesses assertion quality and flakiness. |
 | **Silent Failure Hunter** | `silent-failure-hunter` | Traces swallowed errors, false-success paths, and missing failure propagation or observability. |
 
-> **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers.
+> **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers. `/team` is a deterministic fast path: the agent runs exactly one applicable roster command without building, searching, or delegating first.
 
 ## Requirements
 
@@ -126,9 +126,9 @@ The compiler also tracks managed files in `.autonomous-dev-team/manifest.json` f
 
 The root agent selects the smallest safe workflow tier for each task:
 
-- **Tier 0 (Direct)**: Inspection, configuration checks, and deterministic sync run directly.
-- **Tier 1 (Surgical)**: Local, low-risk changes route to `quick-implementer`.
-- **Tier 2 (Feature / Fix)**: Cohesive features go to `implementer`; unknown-cause failures route first to `diagnostician`. Independent verification is owned by `code-validator`.
+- **Tier 0 (Direct)**: Inspection, configuration checks, and deterministic sync run directly with no delegates.
+- **Tier 1 (Surgical)**: The root may edit directly only when the location and change are known, scope is at most one implementation file plus one related test or configuration file, risk excludes architecture, concurrency, lifecycle, security, and public contracts, and focused verification can prove correctness. Otherwise one `quick-implementer` owns the edit.
+- **Tier 2 (Feature / Fix)**: One primary specialist owns a cohesive feature or fix; unknown-cause failures route first to `diagnostician`. Validation and review roles are added only for actual changed risk.
 - **Tier 3 (Architecture)**: `code-explorer` inspects, `planner` defines cohesive slices, implementers execute, and `code-validator` validates.
 
 The five evaluation roles are opt-in: route them only when harness efficiency, agent-output quality, security, changed-code test adequacy, or silent-failure behavior is specifically in scope.
@@ -136,6 +136,8 @@ The five evaluation roles are opt-in: route them only when harness efficiency, a
 ### Coding Skills
 
 The canonical skills are `team`, `agent-introspection-debugging`, `documentation-lookup`, `verification-loop`, `agent-sort`, `eval-harness`, `tdd-workflow`, `security-review`, and `coding-standards`. Providers may select a skill implicitly when its description matches the task; selection is contextual, so skills do not run on every request. Explicit invocation remains available, including Codex prompt aliases. Skills guide the active agent and never authorize delegation or broader access on their own.
+
+Correctness comes before raw token minimization. The governor prefers the cheapest workflow that still provides adequate implementation and verification evidence, avoids duplicate reviewers covering the same risk, and permits multiple gates for distinct high-risk concerns. It preserves one retry for a plausibly transient delegation failure and at most two evidence-backed repair cycles. At 8 direct tool calls the agent reassesses its approach; at 12 it replans or explains why more work is needed. These checkpoints govern work performed, not provider billing, and they never override required correctness gates or permit success claims while verification is failing or incomplete.
 
 Context duplication is strictly minimized, polling loops are avoided, and verification remains proportional to risk.
 
