@@ -167,7 +167,8 @@ class TestSyncCompiler(unittest.TestCase):
             
             sync.run_init(tmppath)
             
-            self.assertTrue((tmppath / sync.CONFIG_NAME).exists())
+            self.assertTrue((tmppath / ".autonomous-dev-team" / "config.toml").exists())
+            self.assertTrue((tmppath / ".autonomous-dev-team" / "manifest.json").exists())
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
             self.assertTrue((tmppath / "CLAUDE.md").exists())
             self.assertTrue((tmppath / "AGENTS.md").exists())
@@ -177,7 +178,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertFalse((tmppath / "GEMINI.md").exists())
             
             # Check content of generated config
-            with open(tmppath / sync.CONFIG_NAME, "r", encoding="utf-8") as f:
+            with open(tmppath / ".autonomous-dev-team" / "config.toml", "r", encoding="utf-8") as f:
                 content = f.read()
             self.assertIn('Python', content)
 
@@ -228,13 +229,14 @@ class TestSyncCompiler(unittest.TestCase):
     def test_local_installer_requires_force_to_replace_managed_sources(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "new project"
+            client_dir = target / ".autonomous-dev-team"
             unrelated = target / "config.toml"
             command = [sys.executable, str(BASE_DIR / "install.py"), "--provider", "codex", str(target)]
             subprocess.run(command, check=True, capture_output=True, text=True)
-            first_config = (target / sync.CONFIG_NAME).read_text(encoding="utf-8")
+            first_config = (client_dir / "config.toml").read_text(encoding="utf-8")
             self.assertIn('active_provider = "codex"', first_config)
             unrelated.write_text('[tool.example]\nvalue = true\n', encoding="utf-8")
-            installed_sync = target / "sync.py"
+            installed_sync = client_dir / "sync.py"
             installed_sync.write_text("user-managed content\n", encoding="utf-8")
             refused = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
@@ -244,21 +246,24 @@ class TestSyncCompiler(unittest.TestCase):
             subprocess.run(forced_command, check=True, capture_output=True, text=True)
             self.assertEqual(installed_sync.read_text(encoding="utf-8"), (BASE_DIR / "sync.py").read_text(encoding="utf-8"))
             installed_sync.unlink()
-            shutil.rmtree(target / "agents")
-            (target / "agents").mkdir()
-            installed_agent = target / "agents" / "implementer.md"
+            shutil.rmtree(client_dir / "agents")
+            (client_dir / "agents").mkdir()
+            installed_agent = client_dir / "agents" / "implementer.md"
             installed_agent.write_text("local agent changes\n", encoding="utf-8")
             refused = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn(str(installed_agent), refused.stderr)
             self.assertEqual(installed_agent.read_text(encoding="utf-8"), "local agent changes\n")
             subprocess.run(forced_command, check=True, capture_output=True, text=True)
-            self.assertEqual((target / sync.CONFIG_NAME).read_text(encoding="utf-8"), first_config)
+            self.assertEqual((client_dir / "config.toml").read_text(encoding="utf-8"), first_config)
             self.assertEqual(unrelated.read_text(encoding="utf-8"), '[tool.example]\nvalue = true\n')
-            self.assertTrue((target / "agents" / "orchestrator.md").is_file())
+            self.assertTrue((client_dir / "agents" / "orchestrator.md").is_file())
+            self.assertFalse((target / "agents").exists())
+            self.assertFalse((target / "sync.py").exists())
             self.assertFalse((target / "protocol").exists())
             self.assertTrue((target / ".codex" / "config.toml").exists())
             self.assertFalse((target / "CLAUDE.md").exists())
+            self.assertTrue((client_dir / "manifest.json").exists())
 
     def test_remote_installer_requires_pinned_verified_archive(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -371,8 +376,13 @@ class TestSyncCompiler(unittest.TestCase):
                  str(target)],
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, f"Installer failed: {result.stderr}")
-            self.assertTrue((target / sync.CONFIG_NAME).exists())
-            self.assertTrue((target / "sync.py").exists())
+            self.assertTrue((target / ".autonomous-dev-team" / "config.toml").exists())
+            self.assertTrue((target / ".autonomous-dev-team" / "sync.py").exists())
+            self.assertTrue((target / ".autonomous-dev-team" / "agents").exists())
+            self.assertTrue((target / ".autonomous-dev-team" / "manifest.json").exists())
+            self.assertFalse((target / "sync.py").exists())
+            self.assertFalse((target / "agents").exists())
+            self.assertFalse((target / sync.CONFIG_NAME).exists())
             self.assertTrue((target / "AGENTS.md").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
 
@@ -599,6 +609,83 @@ class TestSyncCompiler(unittest.TestCase):
             )
             self.assertEqual(res.returncode, 0, f"make -n {target} failed: {res.stderr}")
             self.assertNotIn("Nothing to be done for", res.stdout, f"Target '{target}' has no recipe in Makefile")
+
+    def test_root_level_self_hosted_layout_mode(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            shutil.copy(BASE_DIR / "sync.py", tmppath / "sync.py")
+
+            self.assertEqual(sync.resolve_config_path(tmppath), tmppath / sync.CONFIG_NAME)
+            self.assertEqual(sync.resolve_agents_dir(tmppath), tmppath / "agents")
+            self.assertEqual(sync.resolve_skills_dir(tmppath), tmppath / "skills")
+            self.assertEqual(sync.resolve_manifest_path(tmppath), tmppath / sync.MANIFEST_NAME)
+            self.assertEqual(sync.resolve_base_dir(tmppath), tmppath)
+
+            sync.run_sync(tmppath, "all")
+
+            self.assertTrue((tmppath / sync.MANIFEST_NAME).exists())
+            self.assertFalse((tmppath / ".autonomous-dev-team").exists())
+            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertTrue((tmppath / "AGENTS.md").exists())
+            self.assertTrue((tmppath / ".codex" / "config.toml").exists())
+            self.assertEqual(sync.run_check(tmppath, "all"), 0)
+
+    def test_client_encapsulated_layout_mode(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            client_dir = tmppath / ".autonomous-dev-team"
+            client_dir.mkdir(parents=True)
+            self.copy_canonical_sources(client_dir)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, client_dir / "config.toml")
+            shutil.copy(BASE_DIR / "sync.py", client_dir / "sync.py")
+
+            self.assertFalse((tmppath / "agents").exists())
+            self.assertFalse((tmppath / "skills").exists())
+            self.assertFalse((tmppath / "sync.py").exists())
+            self.assertFalse((tmppath / sync.CONFIG_NAME).exists())
+
+            self.assertEqual(sync.resolve_config_path(tmppath), client_dir / "config.toml")
+            self.assertEqual(sync.resolve_agents_dir(tmppath), client_dir / "agents")
+            self.assertEqual(sync.resolve_skills_dir(tmppath), client_dir / "skills")
+            self.assertEqual(sync.resolve_manifest_path(tmppath), client_dir / "manifest.json")
+            self.assertEqual(sync.resolve_base_dir(client_dir), tmppath)
+
+            sync.run_sync(tmppath, "all")
+
+            self.assertTrue((client_dir / "manifest.json").exists())
+            self.assertFalse((tmppath / sync.MANIFEST_NAME).exists())
+            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertTrue((tmppath / "AGENTS.md").exists())
+            self.assertTrue((tmppath / ".codex" / "config.toml").exists())
+            self.assertEqual(sync.run_check(tmppath, "all"), 0)
+
+            # Test invocation of sync.py from inside .autonomous-dev-team
+            res = subprocess.run(
+                [sys.executable, str(client_dir / "sync.py"), "--check", "--provider", "all"],
+                cwd=str(tmppath),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, f"Check failed: {res.stderr}")
+
+    def test_config_resolution_fallbacks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            client_dir = tmppath / ".autonomous-dev-team"
+            client_dir.mkdir(parents=True)
+
+            # Fallback 1: .autonomous-dev-team/.autonomous-dev-team.toml
+            legacy_namespaced = client_dir / sync.CONFIG_NAME
+            legacy_namespaced.write_text('[project]\nname = "test"\n', encoding="utf-8")
+            self.assertEqual(sync.resolve_config_path(tmppath), legacy_namespaced)
+            legacy_namespaced.unlink()
+
+            # Fallback 2: root .autonomous-dev-team.toml
+            root_config = tmppath / sync.CONFIG_NAME
+            root_config.write_text('[project]\nname = "test"\n', encoding="utf-8")
+            self.assertEqual(sync.resolve_config_path(tmppath), root_config)
 
 
 if __name__ == "__main__":

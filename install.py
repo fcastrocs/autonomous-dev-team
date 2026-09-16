@@ -34,6 +34,7 @@ DEFAULT_ARCHIVE_URL = ""
 DEFAULT_SHA256 = ""
 
 CONFIG_NAME = ".autonomous-dev-team.toml"
+ENCAPSULATED_DIR = ".autonomous-dev-team"
 MANAGED_DIRS = ("agents", "skills")
 VALID_PROVIDERS = ("all", "codex", "claude", "antigravity", "agy")
 
@@ -213,14 +214,18 @@ def main() -> None:
             )
 
         target_dir = Path(args.target).resolve()
+        client_dir = target_dir / ENCAPSULATED_DIR
+
+        if client_dir.is_symlink():
+            die(f"managed source path must not be a symlink: {client_dir}")
 
         for managed_dir_name in MANAGED_DIRS:
-            target_managed = target_dir / managed_dir_name
-            if target_managed.is_symlink():
-                die(f"managed source path must not be a symlink: {target_managed}")
+            for candidate in (client_dir / managed_dir_name, target_dir / managed_dir_name):
+                if candidate.is_symlink():
+                    die(f"managed source path must not be a symlink: {candidate}")
 
         if not args.force:
-            target_sync = target_dir / "sync.py"
+            target_sync = client_dir / "sync.py"
             if target_sync.exists() or target_sync.is_symlink():
                 die(f"managed source already exists: {target_sync} (use --force to replace it)")
 
@@ -229,11 +234,12 @@ def main() -> None:
                 if not payload_managed.is_dir():
                     continue
                 for source in sorted(payload_managed.iterdir()):
-                    target_source = target_dir / managed_dir_name / source.name
+                    target_source = client_dir / managed_dir_name / source.name
                     if target_source.exists() or target_source.is_symlink():
                         die(f"managed source already exists: {target_source} (use --force to replace it)")
 
         target_dir.mkdir(parents=True, exist_ok=True)
+        client_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             dir=target_dir, prefix=".autonomous-dev-team.install."
         ) as stage_dir_name:
@@ -252,7 +258,7 @@ def main() -> None:
             for managed_dir_name in MANAGED_DIRS:
                 stage_managed = stage_dir / managed_dir_name
                 if stage_managed.is_dir():
-                    dest_managed = target_dir / managed_dir_name
+                    dest_managed = client_dir / managed_dir_name
                     dest_managed.mkdir(parents=True, exist_ok=True)
                     for source in list(stage_managed.iterdir()):
                         dest_source = dest_managed / source.name
@@ -266,14 +272,14 @@ def main() -> None:
                     except OSError:
                         pass
 
-            dest_sync = target_dir / "sync.py"
+            dest_sync = client_dir / "sync.py"
             if dest_sync.exists() or dest_sync.is_symlink():
                 dest_sync.unlink()
             shutil.move(str(stage_sync), str(dest_sync))
 
         init_cmd = [
             sys.executable,
-            str(payload_dir / "sync.py"),
+            str(client_dir / "sync.py"),
             "--dir",
             str(payload_dir),
             "--init",
@@ -287,7 +293,7 @@ def main() -> None:
 
         check_cmd = [
             sys.executable,
-            str(target_dir / "sync.py"),
+            str(client_dir / "sync.py"),
             "--check",
             "--provider",
             args.provider,

@@ -22,9 +22,12 @@ import sys
 from pathlib import Path
 
 CONFIG_NAME = ".autonomous-dev-team.toml"
+CLIENT_CONFIG_NAME = "config.toml"
 SCHEMA_NAME = "autonomous-dev-team"
 SCHEMA_VERSION = 1
 MANIFEST_NAME = ".autonomous-dev-team.manifest.json"
+CLIENT_MANIFEST_NAME = "manifest.json"
+ENCAPSULATED_DIR_NAME = ".autonomous-dev-team"
 ORCHESTRATOR_PROTOCOL = Path("agents/orchestrator.md")
 # Python 3.11+ tomllib support
 try:
@@ -49,12 +52,58 @@ DO NOT EDIT DIRECTLY. MAKE CHANGES IN .autonomous-dev-team.toml OR agents/ THEN 
 -->
 """
 
+def resolve_base_dir(dir_arg: str | Path | None = None) -> Path:
+    """Resolves base directory. If inside .autonomous-dev-team, resolves to parent project root."""
+    if dir_arg:
+        p = Path(dir_arg).resolve()
+        if p.name == ENCAPSULATED_DIR_NAME:
+            return p.parent
+        return p
+    script_parent = Path(__file__).resolve().parent
+    if script_parent.name == ENCAPSULATED_DIR_NAME:
+        return script_parent.parent
+    return script_parent
+
+
+def resolve_agents_dir(base_dir: Path) -> Path:
+    nested = base_dir / ENCAPSULATED_DIR_NAME / "agents"
+    if nested.is_dir():
+        return nested
+    return base_dir / "agents"
+
+
+def resolve_skills_dir(base_dir: Path) -> Path:
+    nested = base_dir / ENCAPSULATED_DIR_NAME / "skills"
+    if nested.is_dir():
+        return nested
+    return base_dir / "skills"
+
+
+def resolve_manifest_path(base_dir: Path) -> Path:
+    nested = base_dir / ENCAPSULATED_DIR_NAME
+    if nested.is_dir():
+        return nested / CLIENT_MANIFEST_NAME
+    return base_dir / MANIFEST_NAME
+
+
+def is_self_repo(path: Path) -> bool:
+    return (
+        (path / "sync.py").is_file()
+        and (path / "install.py").is_file()
+        and (path / "tests" / "test_sync.py").is_file()
+    )
+
+
 def read_canonical_source(base_dir: Path, relative_path: Path) -> str:
-    path = base_dir / relative_path
-    try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"Required canonical source is missing: {path}") from exc
+    candidates = []
+    if relative_path == Path(CONFIG_NAME):
+        candidates.append(base_dir / ENCAPSULATED_DIR_NAME / CLIENT_CONFIG_NAME)
+    candidates.append(base_dir / ENCAPSULATED_DIR_NAME / relative_path)
+    candidates.append(base_dir / relative_path)
+    for p in candidates:
+        if p.is_file():
+            return p.read_text(encoding="utf-8")
+    raise FileNotFoundError(f"Required canonical source is missing: {base_dir / relative_path}")
 
 
 def compile_orchestrator_protocol(base_dir: Path, project: dict, guardrails_block: str) -> str:
@@ -73,10 +122,16 @@ def load_config(config_path: Path) -> dict:
         return tomllib.load(f)
 
 def resolve_config_path(base_dir: Path) -> Path:
-    namespaced = base_dir / CONFIG_NAME
-    if namespaced.exists():
-        return namespaced
-    sys.exit(f"Error: Configuration file '{namespaced}' not found.\nRun './sync.py --init' to generate one.")
+    candidates = [
+        base_dir / ENCAPSULATED_DIR_NAME / CLIENT_CONFIG_NAME,
+        base_dir / ENCAPSULATED_DIR_NAME / CONFIG_NAME,
+        base_dir / CONFIG_NAME,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    preferred = candidates[0] if (base_dir / ENCAPSULATED_DIR_NAME).is_dir() else candidates[2]
+    sys.exit(f"Error: Configuration file '{preferred}' not found.\nRun './sync.py --init' to generate one.")
 
 def managed_path(base_dir: Path, relative: str):
     """Return a lexical in-project path only when no path component is a symlink."""
@@ -462,7 +517,7 @@ def detect_project_stack(target_dir: Path) -> dict:
 
 def generate_project_config_toml(stack_info: dict, source_dir: Path = None, active_provider: str = "all") -> str:
     """Tailor the canonical config's project section using TOML-safe values."""
-    base_dir = source_dir or Path(__file__).resolve().parent
+    base_dir = source_dir or resolve_base_dir()
     canonical = read_canonical_source(base_dir, Path(CONFIG_NAME))
     
     provider_val = "antigravity" if active_provider == "agy" else active_provider
@@ -521,7 +576,7 @@ def generate_project_config_toml(stack_info: dict, source_dir: Path = None, acti
 def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     """Generates a dict of Path -> content for all target provider files without writing them to disk."""
     config_path = resolve_config_path(base_dir)
-    agents_dir = base_dir / "agents"
+    agents_dir = resolve_agents_dir(base_dir)
     config = load_config(config_path)
     project = config.get("project", {})
     provider = provider_override or config.get("active_provider", "all")
@@ -536,7 +591,7 @@ def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     if provider in ("all", "antigravity", "agy"):
         all_outputs.update(compile_antigravity(config, project, guardrails_block, base_dir))
         
-    skills_dir = base_dir / "skills"
+    skills_dir = resolve_skills_dir(base_dir)
     all_outputs.update(compile_skills(project, guardrails_block, base_dir, skills_dir, provider))
         
     return all_outputs
@@ -545,11 +600,16 @@ def run_sync(base_dir: Path, provider_override: str = None):
     """Synchronizes all target provider configurations, writes generated files, prunes stale artifacts, and updates the manifest."""
     print("Synchronizing Multi-Provider Autonomous Agent Protocol...")
     outputs = generate_all_outputs(base_dir, provider_override)
-    manifest_path = base_dir / MANIFEST_NAME
+    manifest_path = resolve_manifest_path(base_dir)
     previous = []
     if manifest_path.exists():
         try:
             previous = json.loads(manifest_path.read_text(encoding="utf-8")).get("files", [])
+        except (OSError, ValueError, TypeError):
+            previous = []
+    elif (base_dir / MANIFEST_NAME).exists():
+        try:
+            previous = json.loads((base_dir / MANIFEST_NAME).read_text(encoding="utf-8")).get("files", [])
         except (OSError, ValueError, TypeError):
             previous = []
     current = {str(path.relative_to(base_dir)) for path in outputs}
@@ -576,8 +636,14 @@ def run_sync(base_dir: Path, provider_override: str = None):
             claude_updated = True
         elif fpath.name == "AGENTS.md":
             antigravity_updated = True
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps({"schema": SCHEMA_NAME, "version": SCHEMA_VERSION,
                                          "files": sorted(current | preserved)}, indent=2) + "\n", encoding="utf-8")
+    if manifest_path != (base_dir / MANIFEST_NAME) and (base_dir / MANIFEST_NAME).is_file():
+        try:
+            (base_dir / MANIFEST_NAME).unlink()
+        except OSError:
+            pass
             
     if codex_agent_count > 0:
         print(f"  ✓ Codex: Compiled {codex_agent_count} agents into .codex/")
@@ -607,10 +673,14 @@ def run_check(base_dir: Path, provider_override: str = None, quiet: bool = False
                 actual_content = f.read()
             if actual_content != expected_content:
                 mismatched.append(fpath.relative_to(base_dir))
-    manifest_path = base_dir / MANIFEST_NAME
+    manifest_path = resolve_manifest_path(base_dir)
     if not manifest_path.exists():
-        missing.append(Path(MANIFEST_NAME))
-    else:
+        fallback = base_dir / MANIFEST_NAME
+        if fallback.exists():
+            manifest_path = fallback
+        else:
+            missing.append(manifest_path.relative_to(base_dir))
+    if manifest_path.exists():
         try:
             owned = json.loads(manifest_path.read_text(encoding="utf-8")).get("files", [])
         except (OSError, ValueError, TypeError):
@@ -678,7 +748,8 @@ def inspect_team(base_dir: Path, provider_override: str = None) -> int:
     print("==============================================================================")
     print("Autonomous Dev Team — Provider & Setup Status")
     print("==============================================================================")
-    print(f"  Configuration File : {CONFIG_NAME}")
+    cfg_display = config_path.name
+    print(f"  Configuration File : {cfg_display}")
     print(f"  Active Provider    : {display_name} (setting: {active_prov})")
     print(f"  Setup Sync Status  : {status_str}")
     print()
@@ -710,13 +781,28 @@ def inspect_team(base_dir: Path, provider_override: str = None) -> int:
     return check_code
 
 def run_init(target_dir: Path, provider_override: str = None, source_dir: Path = None):
-    """Initializes the namespaced config if missing, then compiles provider files."""
-    config_path = target_dir / CONFIG_NAME
+    """Initializes the configuration if missing, then compiles provider files."""
     print(f"Initializing Autonomous Multi-Agent Protocol in: {target_dir.resolve()}")
-    
-    if config_path.exists():
-        print(f"  ℹ Existing {CONFIG_NAME} found in {target_dir.resolve()}. Preserving settings.")
+
+    existing_config = None
+    for candidate in (
+        target_dir / ENCAPSULATED_DIR_NAME / CLIENT_CONFIG_NAME,
+        target_dir / ENCAPSULATED_DIR_NAME / CONFIG_NAME,
+        target_dir / CONFIG_NAME,
+    ):
+        if candidate.is_file():
+            existing_config = candidate
+            break
+
+    if existing_config:
+        print(f"  ℹ Existing {existing_config.name} found in {target_dir.resolve()}. Preserving settings.")
     else:
+        if is_self_repo(target_dir) or (target_dir / CONFIG_NAME).is_file():
+            config_path = target_dir / CONFIG_NAME
+        else:
+            config_path = target_dir / ENCAPSULATED_DIR_NAME / CLIENT_CONFIG_NAME
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
         print("  🔍 Detecting project stack...")
         stack_info = detect_project_stack(target_dir)
         print(f"  ✓ Detected stack: {stack_info.get('stack')} ({stack_info.get('name')})")
@@ -724,30 +810,32 @@ def run_init(target_dir: Path, provider_override: str = None, source_dir: Path =
             print(f"    - Test command: {stack_info.get('focused_test_cmd')}")
         if stack_info.get("build_cmd"):
             print(f"    - Build command: {stack_info.get('build_cmd')}")
-            
-        config_content = generate_project_config_toml(stack_info, source_dir=source_dir, active_provider=provider_override or "all")
+
+        config_content = generate_project_config_toml(
+            stack_info, source_dir=source_dir, active_provider=provider_override or "all"
+        )
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
-        print(f"  ✓ Generated tailored {CONFIG_NAME} for {stack_info.get('name')}")
-        
+        print(f"  ✓ Generated tailored {config_path.name} for {stack_info.get('name')}")
+
     run_sync(target_dir, provider_override)
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Multi-Agent Protocol — Synchronizer & Compiler")
     parser.add_argument("--init", nargs="?", const=".", default=None, metavar="DIR",
-                        help=f"Initialize {CONFIG_NAME} with auto-detected stack in target directory (defaults to current dir) and compile.")
+                        help="Initialize configuration with auto-detected stack in target directory (defaults to current dir) and compile.")
     parser.add_argument("--check", action="store_true",
-                        help=f"Check whether generated provider files are in sync with {CONFIG_NAME} (exits with 0 if up-to-date, 1 if out-of-sync).")
+                        help="Check whether generated provider files are in sync (exits with 0 if up-to-date, 1 if out-of-sync).")
     parser.add_argument("--team", "--status", action="store_true", dest="team",
                         help="Display the active provider configuration, setup sync status, and dev team roster.")
     parser.add_argument("--provider", choices=["all", "codex", "claude", "antigravity", "agy"], default=None,
                         help="Override active provider.")
     parser.add_argument("--dir", default=None, metavar="DIR",
-                        help=f"Directory containing {CONFIG_NAME} and agents/ (defaults to script directory).")
+                        help=f"Directory containing configuration and agents/ (defaults to script directory).")
 
     args = parser.parse_args()
 
-    base_dir = Path(args.dir).resolve() if args.dir else Path(__file__).resolve().parent
+    base_dir = resolve_base_dir(args.dir)
 
     if args.team:
         sys.exit(inspect_team(base_dir, args.provider))

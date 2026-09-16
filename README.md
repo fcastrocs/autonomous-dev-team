@@ -18,7 +18,7 @@ Autonomous Dev Team organizes specialized agents into a cohesive engineering tea
 | **Code Reviewer** | `code-reviewer` | Inspects semantic risks, architecture alignment, safety, and guardrail enforcement. |
 | **Commit Pusher** | `commit-pusher` | Manages Git operations, atomic commits, staging, and branch pushing safely. |
 
-> **Roster Inspection:** Run `python3 sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers.
+> **Roster Inspection:** Run `python3 .autonomous-dev-team/sync.py --team` (or type `/team` during an active chat session) to view the active provider's roster and assigned model reasoning tiers.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/down
 | `-h`, `--help` | _flag_ | | Show usage instructions and options |
 
 > **Installation Behavior:**
-> - Fresh installations copy managed sources (`sync.py`, `agents/*`, `skills/*`) while preserving existing project files.
+> - Fresh installations copy managed sources (`.autonomous-dev-team/sync.py`, `.autonomous-dev-team/agents/*`, `.autonomous-dev-team/skills/*`) into `.autonomous-dev-team/` while preserving existing project files.
 > - If any managed source already exists, installation stops without replacing it. Use `--force` to explicitly update them.
 > - Authentication is provider-owned; authenticate with your provider CLI before use.
 
@@ -85,25 +85,25 @@ python3 install.py --force /path/to/target-project
 ## Set Up Your Project
 
 1. **Configure Your Project**:
-   Installation generates `.autonomous-dev-team.toml` in your repository. This is the **only file you should configure or edit**. Use it to define test commands, build commands, provider models, and guardrails.
+   Installation generates `.autonomous-dev-team/config.toml` in your repository. This is the **only file you should configure or edit**. Use it to define test commands, build commands, provider models, and guardrails.
 
 2. **Regenerate Provider Files**:
    ```bash
-   python3 sync.py
+   python3 .autonomous-dev-team/sync.py
    ```
 
 3. **Verify Configuration Sync**:
    ```bash
-   python3 sync.py --check
+   python3 .autonomous-dev-team/sync.py --check
    ```
 
 4. **Inspect Roster & Sync Status**:
    ```bash
-   python3 sync.py --team
+   python3 .autonomous-dev-team/sync.py --team
    ```
    You can also type `/team` during an active agent session (Codex, Claude Code, or Antigravity) to inspect loaded team roles and reasoning tiers.
 
-> Re-run `python3 sync.py` whenever you modify `.autonomous-dev-team.toml`.
+> Re-run `python3 .autonomous-dev-team/sync.py` whenever you modify `.autonomous-dev-team/config.toml`.
 
 ## Generated Files
 
@@ -115,7 +115,7 @@ Depending on the selected provider, the compiler generates:
 | **Claude Code** | `CLAUDE.md`, `.claude/agents/*.md`, `.claude/skills/team/*` |
 | **Google Antigravity** | `AGENTS.md`, `.agents/skills/team/*` |
 
-The compiler also tracks managed files in `.autonomous-dev-team.manifest.json` for clean pruning and synchronization. `.autonomous-dev-team.toml` is the sole source of truth. Role instructions in `agents/` and generated provider files should never be edited by hand.
+The compiler also tracks managed files in `.autonomous-dev-team/manifest.json` for clean pruning and synchronization. `.autonomous-dev-team/config.toml` is the sole source of truth. Role instructions in `.autonomous-dev-team/agents/` and generated provider files should never be edited by hand.
 
 ## How the Workflow Works
 
@@ -130,7 +130,7 @@ Context duplication is strictly minimized, polling loops are avoided, and verifi
 
 ## Configuration Example
 
-Select active providers and models in `.autonomous-dev-team.toml`:
+Select active providers and models in `.autonomous-dev-team/config.toml`:
 
 ```toml
 active_provider = "codex"
@@ -140,7 +140,7 @@ model = "gpt-5.6-terra"
 reasoning_effort = "low"
 ```
 
-After modifying `.autonomous-dev-team.toml`, run `python3 sync.py`.
+After modifying `.autonomous-dev-team/config.toml`, run `python3 .autonomous-dev-team/sync.py`.
 
 ## Developing this Repository
 
