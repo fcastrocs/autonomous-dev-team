@@ -63,7 +63,7 @@ curl -fsSL https://github.com/fcastrocs/autonomous-dev-team/releases/latest/down
 | `-h`, `--help` | _flag_ | | Show usage instructions and options |
 
 > **Installation Behavior:**
-> - Fresh installations copy managed sources (`.autonomous-dev-team/sync.py`, `.autonomous-dev-team/agents/*`, `.autonomous-dev-team/skills/*`) into `.autonomous-dev-team/` while preserving existing project files.
+> - Fresh installations place the runner (`.autonomous-dev-team/sync.py`) and project configuration (`.autonomous-dev-team/config.toml`) into `.autonomous-dev-team/`, while isolating managed internal sources inside `.autonomous-dev-team/_internal/` (`_internal/agents/*`, `_internal/skills/*`).
 > - If any managed source already exists, installation stops without replacing it. Use `--force` to explicitly update them.
 > - Authentication is provider-owned; authenticate with your provider CLI before use.
 
@@ -85,7 +85,7 @@ python3 install.py --force /path/to/target-project
 ## Set Up Your Project
 
 1. **Configure Your Project**:
-   Installation generates `.autonomous-dev-team/config.toml` in your repository. This is the **only file you should configure or edit**. Use it to define test commands, build commands, provider models, and guardrails.
+   Installation generates `.autonomous-dev-team/config.toml` in your repository. This is the **only file you should configure or edit**. All other files in `.autonomous-dev-team/` (such as `sync.py` and the `_internal/` directory) are engine-managed plumbing. Use `config.toml` to define test commands, build commands, provider models, and guardrails.
 
 2. **Regenerate Provider Files**:
    ```bash
@@ -115,7 +115,7 @@ Depending on the selected provider, the compiler generates:
 | **Claude Code** | `CLAUDE.md`, `.claude/agents/*.md`, `.claude/skills/team/*` |
 | **Google Antigravity** | `AGENTS.md`, `.agents/skills/team/*` |
 
-The compiler also tracks managed files in `.autonomous-dev-team/manifest.json` for clean pruning and synchronization. `.autonomous-dev-team/config.toml` is the sole source of truth. Role instructions in `.autonomous-dev-team/agents/` and generated provider files should never be edited by hand.
+The compiler also tracks managed files in `.autonomous-dev-team/manifest.json` for clean pruning and synchronization. `.autonomous-dev-team/config.toml` is the sole source of truth. Internal role instructions in `.autonomous-dev-team/_internal/agents/` and generated provider files should never be edited by hand.
 
 ## How the Workflow Works
 

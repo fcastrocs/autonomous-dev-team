@@ -246,9 +246,9 @@ class TestSyncCompiler(unittest.TestCase):
             subprocess.run(forced_command, check=True, capture_output=True, text=True)
             self.assertEqual(installed_sync.read_text(encoding="utf-8"), (BASE_DIR / "sync.py").read_text(encoding="utf-8"))
             installed_sync.unlink()
-            shutil.rmtree(client_dir / "agents")
-            (client_dir / "agents").mkdir()
-            installed_agent = client_dir / "agents" / "implementer.md"
+            shutil.rmtree(client_dir / "_internal" / "agents")
+            (client_dir / "_internal" / "agents").mkdir(parents=True, exist_ok=True)
+            installed_agent = client_dir / "_internal" / "agents" / "implementer.md"
             installed_agent.write_text("local agent changes\n", encoding="utf-8")
             refused = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
@@ -257,13 +257,18 @@ class TestSyncCompiler(unittest.TestCase):
             subprocess.run(forced_command, check=True, capture_output=True, text=True)
             self.assertEqual((client_dir / "config.toml").read_text(encoding="utf-8"), first_config)
             self.assertEqual(unrelated.read_text(encoding="utf-8"), '[tool.example]\nvalue = true\n')
-            self.assertTrue((client_dir / "agents" / "orchestrator.md").is_file())
+            self.assertTrue((client_dir / "_internal" / "agents" / "orchestrator.md").is_file())
+            self.assertFalse((client_dir / "agents").exists())
             self.assertFalse((target / "agents").exists())
             self.assertFalse((target / "sync.py").exists())
             self.assertFalse((target / "protocol").exists())
             self.assertTrue((target / ".codex" / "config.toml").exists())
             self.assertFalse((target / "CLAUDE.md").exists())
             self.assertTrue((client_dir / "manifest.json").exists())
+            self.assertFalse((target / "__pycache__").exists())
+            self.assertFalse((client_dir / "__pycache__").exists())
+            self.assertEqual(list(target.glob(".autonomous-dev-team.install.*")), [])
+            self.assertEqual(list(client_dir.glob(".install_stage.*")), [])
 
     def test_remote_installer_requires_pinned_verified_archive(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -378,13 +383,18 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(result.returncode, 0, f"Installer failed: {result.stderr}")
             self.assertTrue((target / ".autonomous-dev-team" / "config.toml").exists())
             self.assertTrue((target / ".autonomous-dev-team" / "sync.py").exists())
-            self.assertTrue((target / ".autonomous-dev-team" / "agents").exists())
+            self.assertTrue((target / ".autonomous-dev-team" / "_internal" / "agents").exists())
+            self.assertFalse((target / ".autonomous-dev-team" / "agents").exists())
             self.assertTrue((target / ".autonomous-dev-team" / "manifest.json").exists())
             self.assertFalse((target / "sync.py").exists())
             self.assertFalse((target / "agents").exists())
             self.assertFalse((target / sync.CONFIG_NAME).exists())
             self.assertTrue((target / "AGENTS.md").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertFalse((target / "__pycache__").exists())
+            self.assertFalse((target / ".autonomous-dev-team" / "__pycache__").exists())
+            self.assertEqual(list(target.glob(".autonomous-dev-team.install.*")), [])
+            self.assertEqual(list((target / ".autonomous-dev-team").glob(".install_stage.*")), [])
 
     def test_native_provider_outputs_and_codex_hierarchy(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
@@ -662,6 +672,43 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
 
             # Test invocation of sync.py from inside .autonomous-dev-team
+            res = subprocess.run(
+                [sys.executable, str(client_dir / "sync.py"), "--check", "--provider", "all"],
+                cwd=str(tmppath),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, f"Check failed: {res.stderr}")
+
+    def test_client_encapsulated_internal_layout_mode(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            client_dir = tmppath / ".autonomous-dev-team"
+            internal_dir = client_dir / "_internal"
+            internal_dir.mkdir(parents=True)
+            self.copy_canonical_sources(internal_dir)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, client_dir / "config.toml")
+            shutil.copy(BASE_DIR / "sync.py", client_dir / "sync.py")
+
+            self.assertFalse((tmppath / "agents").exists())
+            self.assertFalse((tmppath / "skills").exists())
+            self.assertFalse((client_dir / "agents").exists())
+            self.assertFalse((client_dir / "skills").exists())
+
+            self.assertEqual(sync.resolve_config_path(tmppath), client_dir / "config.toml")
+            self.assertEqual(sync.resolve_agents_dir(tmppath), internal_dir / "agents")
+            self.assertEqual(sync.resolve_skills_dir(tmppath), internal_dir / "skills")
+            self.assertEqual(sync.resolve_manifest_path(tmppath), client_dir / "manifest.json")
+            self.assertEqual(sync.resolve_base_dir(internal_dir), tmppath)
+
+            sync.run_sync(tmppath, "all")
+
+            self.assertTrue((client_dir / "manifest.json").exists())
+            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertTrue((tmppath / "AGENTS.md").exists())
+            self.assertTrue((tmppath / ".codex" / "config.toml").exists())
+            self.assertEqual(sync.run_check(tmppath, "all"), 0)
+
             res = subprocess.run(
                 [sys.executable, str(client_dir / "sync.py"), "--check", "--provider", "all"],
                 cwd=str(tmppath),

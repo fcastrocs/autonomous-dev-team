@@ -14,6 +14,8 @@ if sys.version_info < (3, 11):
     )
     sys.exit(1)
 
+sys.dont_write_bytecode = True
+
 import argparse
 import hashlib
 import os
@@ -35,6 +37,7 @@ DEFAULT_SHA256 = ""
 
 CONFIG_NAME = ".autonomous-dev-team.toml"
 ENCAPSULATED_DIR = ".autonomous-dev-team"
+INTERNAL_DIR = "_internal"
 MANAGED_DIRS = ("agents", "skills")
 VALID_PROVIDERS = ("all", "codex", "claude", "antigravity", "agy")
 
@@ -215,12 +218,19 @@ def main() -> None:
 
         target_dir = Path(args.target).resolve()
         client_dir = target_dir / ENCAPSULATED_DIR
+        client_internal_dir = client_dir / INTERNAL_DIR
 
         if client_dir.is_symlink():
             die(f"managed source path must not be a symlink: {client_dir}")
+        if client_internal_dir.is_symlink():
+            die(f"managed source path must not be a symlink: {client_internal_dir}")
 
         for managed_dir_name in MANAGED_DIRS:
-            for candidate in (client_dir / managed_dir_name, target_dir / managed_dir_name):
+            for candidate in (
+                client_internal_dir / managed_dir_name,
+                client_dir / managed_dir_name,
+                target_dir / managed_dir_name,
+            ):
                 if candidate.is_symlink():
                     die(f"managed source path must not be a symlink: {candidate}")
 
@@ -234,14 +244,26 @@ def main() -> None:
                 if not payload_managed.is_dir():
                     continue
                 for source in sorted(payload_managed.iterdir()):
-                    target_source = client_dir / managed_dir_name / source.name
-                    if target_source.exists() or target_source.is_symlink():
-                        die(f"managed source already exists: {target_source} (use --force to replace it)")
+                    for parent_dir in (client_internal_dir, client_dir):
+                        target_source = parent_dir / managed_dir_name / source.name
+                        if target_source.exists() or target_source.is_symlink():
+                            die(f"managed source already exists: {target_source} (use --force to replace it)")
 
         target_dir.mkdir(parents=True, exist_ok=True)
         client_dir.mkdir(parents=True, exist_ok=True)
+        client_internal_dir.mkdir(parents=True, exist_ok=True)
+        # Clean up any leftover temporary staging folders from previous aborted runs
+        for candidate_root in (client_dir, target_dir):
+            for pattern in (".install_stage.*", ".autonomous-dev-team.install.*"):
+                for leftover in candidate_root.glob(pattern):
+                    if leftover.is_dir() and not leftover.is_symlink():
+                        try:
+                            shutil.rmtree(leftover)
+                        except OSError:
+                            pass
+
         with tempfile.TemporaryDirectory(
-            dir=target_dir, prefix=".autonomous-dev-team.install."
+            dir=client_dir, prefix=".install_stage."
         ) as stage_dir_name:
             stage_dir = Path(stage_dir_name)
             stage_sync = stage_dir / "sync.py"
@@ -258,7 +280,7 @@ def main() -> None:
             for managed_dir_name in MANAGED_DIRS:
                 stage_managed = stage_dir / managed_dir_name
                 if stage_managed.is_dir():
-                    dest_managed = client_dir / managed_dir_name
+                    dest_managed = client_internal_dir / managed_dir_name
                     dest_managed.mkdir(parents=True, exist_ok=True)
                     for source in list(stage_managed.iterdir()):
                         dest_source = dest_managed / source.name
@@ -271,6 +293,10 @@ def main() -> None:
                         stage_managed.rmdir()
                     except OSError:
                         pass
+                    # If legacy un-prefixed directory exists in client_dir, clean it up
+                    legacy_managed = client_dir / managed_dir_name
+                    if legacy_managed.is_dir() and not legacy_managed.is_symlink():
+                        shutil.rmtree(legacy_managed)
 
             dest_sync = client_dir / "sync.py"
             if dest_sync.exists() or dest_sync.is_symlink():
@@ -279,6 +305,7 @@ def main() -> None:
 
         init_cmd = [
             sys.executable,
+            "-B",
             str(client_dir / "sync.py"),
             "--dir",
             str(payload_dir),
@@ -293,6 +320,7 @@ def main() -> None:
 
         check_cmd = [
             sys.executable,
+            "-B",
             str(client_dir / "sync.py"),
             "--check",
             "--provider",
@@ -301,6 +329,14 @@ def main() -> None:
         res = subprocess.run(check_cmd, cwd=str(target_dir))
         if res.returncode != 0:
             sys.exit(res.returncode)
+
+        # Ensure no bytecode cache was created
+        for pycache in (client_dir / "__pycache__", client_internal_dir / "__pycache__", target_dir / "__pycache__"):
+            if pycache.is_dir() and not pycache.is_symlink():
+                try:
+                    shutil.rmtree(pycache)
+                except OSError:
+                    pass
 
         print(f"\nInstallation complete for {target_dir} (provider: {args.provider}).")
         print("Authenticate with the selected provider CLI before use.")
