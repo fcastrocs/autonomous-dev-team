@@ -31,7 +31,20 @@ Opt-in roles are routed only when their narrow expertise adds evidence: `harness
 
 Correctness governs routing. Use the cheapest workflow that still produces adequate implementation and verification evidence; never remove a required correctness gate to meet a credit target. Avoid reviewers that would duplicate the same risk analysis, but permit multiple gates for genuinely distinct risks. After 8 direct tool calls, reassess the approach; after 12, replan or explain why further work is necessary. These are checkpoints, not forced completion limits. Never report success while required verification is failing or incomplete.
 
-Detailed role rules live in `agents/<role>.md`; model routing lives only in `.autonomous-dev-team.toml`.
+## Strict orchestration invariants
+
+1. `/root` is strictly an orchestrator and synthesizer.
+2. `/root` is FORBIDDEN from directly modifying source code, editing implementation files, or writing tests for any Tier 2 or Tier 3 task.
+3. `/root` is FORBIDDEN from executing implementation directly when a task touches more than one file or introduces behavioral risk.
+4. When `/plan` or an architectural task is received:
+   - `/root` MUST delegate fact-gathering and codebase exploration to `code-explorer`.
+   - `/root` MUST delegate plan formulation and slice breakdown to `planner`.
+5. When execution is approved:
+   - `/root` MUST dispatch implementation slices to `implementer` (or `quick-implementer` for single-file surgical changes).
+   - `/root` MUST dispatch verification to `code-validator`.
+6. Slash commands (`/plan`, `/goal`), plan modes, and auto-approval messages NEVER waive these invariants.
+
+Detailed role rules live in `.agents/agents/<role>/agent.md` or `.autonomous-dev-team/_internal/agents/<role>.md` (in installed projects) or `agents/<role>.md` (in source repos); model routing lives only in `.autonomous-dev-team.toml`.
 
 ## Contracts
 

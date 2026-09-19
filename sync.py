@@ -24,6 +24,28 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 
+# Explicit Python version check at top of sync.py: Python 3.11+
+if sys.version_info < (3, 11):
+    candidates = [
+        shutil.which("python3.11"),
+        shutil.which("python3.12"),
+        shutil.which("python3.13"),
+        os.path.expanduser("~/.local/bin/python3.11"),
+        "/opt/homebrew/bin/python3.11",
+        "/usr/local/bin/python3.11",
+    ]
+    target_py = None
+    for cand in candidates:
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            target_py = cand
+            break
+    if target_py and os.path.realpath(target_py) != os.path.realpath(sys.executable):
+        os.execv(target_py, [target_py] + sys.argv)
+    sys.stderr.write(
+        f"Error: Python 3.11 or higher is required (found Python {sys.version_info[0]}.{sys.version_info[1]}).\n"
+    )
+    sys.exit(1)
+
 CONFIG_NAME = ".autonomous-dev-team.toml"
 CLIENT_CONFIG_NAME = "config.toml"
 SCHEMA_NAME = "autonomous-dev-team"
@@ -245,8 +267,12 @@ def compile_codex(config: dict, project: dict, guardrails_block: str, base_dir: 
     
     protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
     dev_instructions = f"""# Codex delegation adapter
-Use `spawn_agent` with `fork_turns = "none"` and pass only the Compact Dispatch Contract.
-Use `code-explorer` for targeted repository discovery and `diagnostician` for unknown-cause failures.
+MANDATORY MULTI-AGENT INSTRUCTION:
+The user and repository protocol explicitly ask for sub-agents, delegation, and parallel agent work for all non-trivial tasks.
+- For Tier 2 (features/fixes) and Tier 3 (architecture/refactors/plans), /root MUST call `spawn_agent` to delegate work to the designated role (`code-explorer`, `planner`, `implementer`, `code-validator`).
+- /root is strictly an orchestrator and MUST NOT directly write multi-file implementation code or author tests.
+- Use `spawn_agent` with `fork_turns = "none"` and pass only the Compact Dispatch Contract.
+- Use `code-explorer` for targeted repository discovery and `diagnostician` for unknown-cause failures.
 
 {protocol}
 """
@@ -351,9 +377,13 @@ Each generated agent file contains its canonical role instructions and model map
 
 
 def compile_antigravity(config: dict, project: dict, guardrails_block: str,
-                        base_dir: Path) -> dict:
-    """Antigravity target: portable repository instructions and delegation syntax."""
+                        base_dir: Path, agents_dir: Path = None) -> dict:
+    """Antigravity target: portable repository instructions, delegation syntax, and native subagents."""
+    if agents_dir is None:
+        agents_dir = resolve_agents_dir(base_dir)
+
     agents = provider_agents(config, "antigravity") or provider_agents(config, "agy")
+    codex_agents = provider_agents(config, "codex")
     protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
     routing = "\n".join(
         f"- `{name}`: model `{agent.get('model', 'flash')}`"
@@ -370,11 +400,42 @@ When invoking `invoke_subagent`, set `TypeName: "self"` (or
 `TypeName: "research"` for read-only exploration), `Role` to the
 agent name, and `Model` according to this routing table. Include the
 compact dispatch contract and instruct the subagent to adopt the matching
-`agents/<role>.md` persona. Never send full conversation history.
+`.agents/agents/<role>/agent.md` (or `agents/<role>.md`) persona. Never send full conversation history.
 
 {routing}
 """
-    return {base_dir / "AGENTS.md": agy_content}
+    outputs = {base_dir / "AGENTS.md": agy_content}
+
+    for agent_path in sorted(agents_dir.glob("*.md")):
+        role = agent_path.stem
+        if role not in agents:
+            continue
+        a_conf = agents[role]
+        model = a_conf.get("model", "flash")
+        desc = (
+            a_conf.get("description")
+            or codex_agents.get(role, {}).get("description")
+            or f"{role} agent for {project.get('name', 'project')}"
+        )
+        compiled_instructions = interpolate_prompt(
+            agent_path.read_text(encoding="utf-8"), project, guardrails_block
+        )
+        agent_content = f"""---
+name: {role}
+description: {desc}
+subagent: true
+mainAgent: false
+model: {model}
+---
+
+{AUTO_GEN_HEADER_MD}
+# {role} Persona
+
+{compiled_instructions.strip()}
+"""
+        outputs[base_dir / ".agents" / "agents" / role / "agent.md"] = agent_content
+
+    return outputs
 
 def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_dir: Path, scope: str) -> dict:
     """Compile canonical skills for native discovery and explicit Codex prompts."""
@@ -597,7 +658,7 @@ def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     if provider in ("all", "claude"):
         all_outputs.update(compile_claude(config, project, guardrails_block, base_dir, agents_dir))
     if provider in ("all", "antigravity", "agy"):
-        all_outputs.update(compile_antigravity(config, project, guardrails_block, base_dir))
+        all_outputs.update(compile_antigravity(config, project, guardrails_block, base_dir, agents_dir))
         
     skills_dir = resolve_skills_dir(base_dir)
     all_outputs.update(compile_skills(project, guardrails_block, base_dir, skills_dir, provider))
@@ -633,6 +694,7 @@ def run_sync(base_dir: Path, provider_override: str = None):
     codex_agent_count = 0
     claude_updated = False
     antigravity_updated = False
+    antigravity_agent_count = 0
     
     for fpath, content in outputs.items():
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -640,6 +702,8 @@ def run_sync(base_dir: Path, provider_override: str = None):
             f.write(content)
         if ".codex/agents" in fpath.as_posix():
             codex_agent_count += 1
+        elif ".agents/agents" in fpath.as_posix() and fpath.name == "agent.md":
+            antigravity_agent_count += 1
         elif fpath.name == "CLAUDE.md":
             claude_updated = True
         elif fpath.name == "AGENTS.md":
@@ -658,7 +722,10 @@ def run_sync(base_dir: Path, provider_override: str = None):
     if claude_updated:
         print("  ✓ Claude Code: Generated CLAUDE.md")
     if antigravity_updated:
-        print("  ✓ Antigravity: Generated AGENTS.md")
+        if antigravity_agent_count > 0:
+            print(f"  ✓ Antigravity: Generated AGENTS.md and compiled {antigravity_agent_count} agents into .agents/agents/")
+        else:
+            print("  ✓ Antigravity: Generated AGENTS.md")
     
     skills_count = sum(1 for p in current if "/skills/" in str(p) or "/prompts/" in str(p))
     if skills_count > 0:

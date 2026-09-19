@@ -61,6 +61,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn(aname, output_names, f"Missing Codex agent: {aname}")
             
         self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 13)
+        self.assertEqual(len([k for k in outputs if ".agents/agents" in str(k) and k.name == "agent.md"]), 13)
             
         # Verify no unreplaced placeholders remain in any output
         placeholder_pattern = re.compile(r'\{[A-Z0-9_]+\}')
@@ -82,10 +83,10 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertTrue(any(p.name == "SKILL.md" for p in claude_only))
 
         antigravity_only = sync.generate_all_outputs(BASE_DIR, "antigravity")
-        self.assertEqual({p.name for p in antigravity_only}, {"AGENTS.md", "SKILL.md"})
+        self.assertEqual({p.name for p in antigravity_only}, {"AGENTS.md", "SKILL.md", "agent.md"})
 
         agy_only = sync.generate_all_outputs(BASE_DIR, "agy")
-        self.assertEqual({p.name for p in agy_only}, {"AGENTS.md", "SKILL.md"})
+        self.assertEqual({p.name for p in agy_only}, {"AGENTS.md", "SKILL.md", "agent.md"})
 
     def test_check_passes_on_current_repo(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -386,6 +387,16 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Python 3.11 or higher is required", result.stderr)
 
+    def test_sync_enforces_python_311_requirement(self):
+        sync_code = (BASE_DIR / "sync.py").read_text(encoding="utf-8")
+        self.assertIn("sys.version_info < (3, 11)", sync_code)
+        code = "import sys, os, shutil; sys.version_info = (3, 10, 0); " + sync_code.split("import sys\n", 1)[1]
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Python 3.11 or higher is required", result.stderr)
+
     def test_remote_installer_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
@@ -433,6 +444,8 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertIn("tool_output_token_limit = 6000", codex)
         self.assertIn("model_auto_compact_token_limit = 45000", codex)
         self.assertIn('model_auto_compact_token_limit_scope = "body_after_prefix"', codex)
+        self.assertIn("MANDATORY MULTI-AGENT INSTRUCTION:", codex)
+        self.assertIn("explicitly ask for sub-agents, delegation, and parallel agent work", codex)
         for agent_name in ("planner", "implementer", "diagnostician", "code-reviewer"):
             agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
             self.assertIn('model_reasoning_effort = "medium"', agent)
@@ -737,7 +750,7 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_root_level_self_hosted_layout_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
+            tmppath = Path(tmpdir).resolve()
             self.copy_canonical_sources(tmppath)
             shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
             shutil.copy(BASE_DIR / "sync.py", tmppath / "sync.py")
@@ -759,7 +772,7 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_client_encapsulated_layout_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
+            tmppath = Path(tmpdir).resolve()
             client_dir = tmppath / ".autonomous-dev-team"
             client_dir.mkdir(parents=True)
             self.copy_canonical_sources(client_dir)
@@ -797,7 +810,7 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_client_encapsulated_internal_layout_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
+            tmppath = Path(tmpdir).resolve()
             client_dir = tmppath / ".autonomous-dev-team"
             internal_dir = client_dir / "_internal"
             internal_dir.mkdir(parents=True)

@@ -9,10 +9,28 @@ import sys
 
 # Explicit Python version check at top of install.py: Python 3.11+
 if sys.version_info < (3, 11):
+    import shutil
+    import os
+    candidates = [
+        shutil.which("python3.11"),
+        shutil.which("python3.12"),
+        shutil.which("python3.13"),
+        os.path.expanduser("~/.local/bin/python3.11"),
+        "/opt/homebrew/bin/python3.11",
+        "/usr/local/bin/python3.11",
+    ]
+    target_py = None
+    for cand in candidates:
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            target_py = cand
+            break
+    if target_py and os.path.realpath(target_py) != os.path.realpath(sys.executable):
+        os.execv(target_py, [target_py] + sys.argv)
     sys.stderr.write(
-        f"Error: Python 3.11 or higher is required (found Python {sys.version_info.major}.{sys.version_info.minor}).\n"
+        f"Error: Python 3.11 or higher is required (found Python {sys.version_info[0]}.{sys.version_info[1]}).\n"
     )
     sys.exit(1)
+
 
 sys.dont_write_bytecode = True
 
