@@ -24,8 +24,15 @@ if sys.version_info < (3, 11):
         if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
             target_py = cand
             break
-    if target_py and os.path.realpath(target_py) != os.path.realpath(sys.executable):
-        os.execv(target_py, [target_py] + sys.argv)
+    if target_py and os.path.realpath(target_py) != os.path.realpath(sys.executable) and sys.argv and sys.argv[0] != "-c":
+        args = [target_py]
+        if " -m " in sys.argv[0]:
+            parts = sys.argv[0].split(" -m ", 1)
+            args.extend(["-m", parts[1]])
+            args.extend(sys.argv[1:])
+        else:
+            args.extend(sys.argv)
+        os.execv(target_py, args)
     sys.stderr.write(
         f"Error: Python 3.11 or higher is required (found Python {sys.version_info[0]}.{sys.version_info[1]}).\n"
     )

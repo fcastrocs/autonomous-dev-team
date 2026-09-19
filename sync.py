@@ -24,6 +24,20 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 
+def build_trampoline_args(target_py, argv):
+    """Constructs execv args for Python trampoline, handling '-m' module rewriting."""
+    if not argv or argv[0] == "-c":
+        return None
+    args = [target_py]
+    if " -m " in argv[0]:
+        parts = argv[0].split(" -m ", 1)
+        args.extend(["-m", parts[1]])
+        args.extend(argv[1:])
+    else:
+        args.extend(argv)
+    return args
+
+
 # Explicit Python version check at top of sync.py: Python 3.11+
 if sys.version_info < (3, 11):
     candidates = [
@@ -40,7 +54,9 @@ if sys.version_info < (3, 11):
             target_py = cand
             break
     if target_py and os.path.realpath(target_py) != os.path.realpath(sys.executable):
-        os.execv(target_py, [target_py] + sys.argv)
+        args = build_trampoline_args(target_py, sys.argv)
+        if args is not None:
+            os.execv(target_py, args)
     sys.stderr.write(
         f"Error: Python 3.11 or higher is required (found Python {sys.version_info[0]}.{sys.version_info[1]}).\n"
     )

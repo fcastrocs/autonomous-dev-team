@@ -862,6 +862,43 @@ class TestSyncCompiler(unittest.TestCase):
             root_config.write_text('[project]\nname = "test"\n', encoding="utf-8")
             self.assertEqual(sync.resolve_config_path(tmppath), root_config)
 
+    def test_trampoline_build_args_module_mode(self):
+        target_py = "/mock/bin/python3.11"
+        argv = ["python3 -m unittest", "discover", "tests"]
+        expected = [target_py, "-m", "unittest", "discover", "tests"]
+        self.assertEqual(sync.build_trampoline_args(target_py, argv), expected)
+
+    def test_trampoline_build_args_script_mode(self):
+        target_py = "/mock/bin/python3.11"
+        argv = ["sync.py", "--check"]
+        expected = [target_py, "sync.py", "--check"]
+        self.assertEqual(sync.build_trampoline_args(target_py, argv), expected)
+
+    def test_trampoline_build_args_bypasses(self):
+        target_py = "/mock/bin/python3.11"
+        self.assertIsNone(sync.build_trampoline_args(target_py, ["-c"]))
+        self.assertIsNone(sync.build_trampoline_args(target_py, ["-c", "import sys"]))
+        self.assertIsNone(sync.build_trampoline_args(target_py, []))
+
+    def test_trampoline_reexec_behavior(self):
+        target_py = "/mock/bin/python3.11"
+        with mock.patch("os.execv") as mock_execv:
+            argv = ["python3 -m unittest", "discover", "tests"]
+            args = sync.build_trampoline_args(target_py, argv)
+            if args is not None:
+                mock_execv(target_py, args)
+            mock_execv.assert_called_once_with(
+                target_py,
+                [target_py, "-m", "unittest", "discover", "tests"],
+            )
+
+        with mock.patch("os.execv") as mock_execv:
+            argv = ["-c"]
+            args = sync.build_trampoline_args(target_py, argv)
+            if args is not None:
+                mock_execv(target_py, args)
+            mock_execv.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

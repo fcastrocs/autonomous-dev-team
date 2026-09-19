@@ -22,8 +22,20 @@ fi
 command -v gh >/dev/null || fail "GitHub CLI (gh) is required"
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI (gh) must be authenticated"
 
-python3 sync.py --check || fail "provider files are out of sync; run 'python3 sync.py' first"
-python3 -m unittest discover tests || fail "test suite failed; fix tests before releasing"
+PYTHON=""
+for cand in python3.11 python3.12 python3.13 "$HOME/.local/bin/python3.11" /opt/homebrew/bin/python3.11 /usr/local/bin/python3.11 python3; do
+  if command -v "$cand" >/dev/null 2>&1 || [[ -x "$cand" ]]; then
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+      PYTHON="$cand"
+      break
+    fi
+  fi
+done
+
+[[ -n "$PYTHON" ]] || fail "Python 3.11 or higher is required"
+
+"$PYTHON" sync.py --check || fail "provider files are out of sync; run 'python3 sync.py' first"
+"$PYTHON" -m unittest discover tests || fail "test suite failed; fix tests before releasing"
 
 if [[ $# -eq 1 ]]; then
   VERSION="$1"
