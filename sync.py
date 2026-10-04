@@ -2,7 +2,7 @@
 """
 Autonomous Multi-Agent Protocol — Synchronizer & Compiler
 Single source of truth compiler: merges .autonomous-dev-team.toml, agents/*.md, and skills/
-into provider-specific configurations (.codex/, .claude/, .agents/, CLAUDE.md, AGENTS.md).
+into provider-specific configurations (.codex/, .claude/, .agents/, AGENTS.md).
 Includes stack auto-detection, zero-friction init, and CI consistency checks.
 """
 # ==============================================================================
@@ -207,9 +207,19 @@ def output_provider(relative: str):
         return "codex"
     if relative == "CLAUDE.md" or (path.parts and path.parts[0] == ".claude"):
         return "claude"
-    if relative == "AGENTS.md" or (path.parts and path.parts[0] == ".agents"):
+    if relative == "AGENTS.md":
+        return "shared"
+    if path.parts and path.parts[0] == ".agents":
         return "antigravity"
     return None
+
+def provider_matches_scope(file_provider: str, scope: str) -> bool:
+    norm_scope = "antigravity" if scope == "agy" else scope
+    if norm_scope == "all":
+        return True
+    if file_provider == "shared":
+        return norm_scope in ("claude", "antigravity")
+    return file_provider == norm_scope
 
 def build_project_guardrails(project: dict) -> str:
     lines = []
@@ -351,27 +361,9 @@ The user and repository protocol explicitly ask for sub-agents, delegation, and 
 
 def compile_claude(config: dict, project: dict, guardrails_block: str,
                    base_dir: Path, agents_dir: Path) -> dict:
-    """Compiles Claude Code configuration into CLAUDE.md and .claude/agents/*.md. Returns map of file paths to contents."""
+    """Compiles Claude Code configuration into .claude/agents/*.md. Returns map of file paths to contents."""
     agents = provider_agents(config, "claude")
-    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
-    routing = "\n".join(
-        f"- `{name}`: `{agent.get('model', 'inherit')}` "
-        f"(thinking: `{agent.get('thinking', 'medium')}`)"
-        for name, agent in agents.items()
-    )
-    claude_content = f"""{AUTO_GEN_HEADER_MD}
-# Claude Code Delegation Adapter
-
-Use Claude Code's native agent configuration in `.claude/agents/`.
-Each generated agent file contains its canonical role instructions and model mapping.
-
-{protocol}
-
-## Claude Model Routing
-
-{routing}
-"""
-    outputs = {base_dir / "CLAUDE.md": claude_content}
+    outputs = {}
 
     for agent_path in sorted(agents_dir.glob("*.md")):
         role = agent_path.stem
@@ -394,33 +386,13 @@ Each generated agent file contains its canonical role instructions and model map
 
 def compile_antigravity(config: dict, project: dict, guardrails_block: str,
                         base_dir: Path, agents_dir: Path = None) -> dict:
-    """Antigravity target: portable repository instructions, delegation syntax, and native subagents."""
+    """Antigravity target: native subagents."""
     if agents_dir is None:
         agents_dir = resolve_agents_dir(base_dir)
 
     agents = provider_agents(config, "antigravity") or provider_agents(config, "agy")
     codex_agents = provider_agents(config, "codex")
-    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
-    routing = "\n".join(
-        f"- `{name}`: model `{agent.get('model', 'flash')}`"
-        for name, agent in agents.items()
-    )
-    agy_content = f"""{AUTO_GEN_HEADER_MD}
-# Antigravity Delegation Adapter
-
-{protocol}
-
-## Antigravity Dispatch Syntax
-
-When invoking `invoke_subagent`, set `TypeName: "self"` (or
-`TypeName: "research"` for read-only exploration), `Role` to the
-agent name, and `Model` according to this routing table. Include the
-compact dispatch contract and instruct the subagent to adopt the matching
-`.agents/agents/<role>/agent.md` (or `agents/<role>.md`) persona. Never send full conversation history.
-
-{routing}
-"""
-    outputs = {base_dir / "AGENTS.md": agy_content}
+    outputs = {}
 
     for agent_path in sorted(agents_dir.glob("*.md")):
         role = agent_path.stem
@@ -452,6 +424,60 @@ model: {model}
         outputs[base_dir / ".agents" / "agents" / role / "agent.md"] = agent_content
 
     return outputs
+
+
+def compile_agents_md(config: dict, project: dict, guardrails_block: str,
+                      base_dir: Path, provider: str = "all") -> str:
+    """Compiles universal AGENTS.md orchestrator protocol and provider-specific dispatch/routing syntax."""
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    include_claude = provider in ("all", "claude")
+    include_agy = provider in ("all", "antigravity", "agy")
+
+    sections = [AUTO_GEN_HEADER_MD]
+
+    if include_claude and include_agy:
+        title = "# Antigravity & Claude Code Delegation Adapter"
+    elif include_claude:
+        title = "# Claude Code Delegation Adapter"
+    else:
+        title = "# Antigravity Delegation Adapter"
+
+    sections.append(title)
+    sections.append(protocol)
+
+    if include_claude:
+        claude_agents = provider_agents(config, "claude")
+        claude_routing = "\n".join(
+            f"- `{name}`: `{agent.get('model', 'inherit')}` "
+            f"(thinking: `{agent.get('thinking', 'medium')}`)"
+            for name, agent in claude_agents.items()
+        )
+        sections.append(
+            "## Claude Subagent Guidance\n\n"
+            "Use Claude Code's native agent configuration in `.claude/agents/`.\n"
+            "Each generated agent file contains its canonical role instructions and model mapping.\n\n"
+            "## Claude Model Routing\n\n"
+            f"{claude_routing}"
+        )
+
+    if include_agy:
+        agy_agents = provider_agents(config, "antigravity") or provider_agents(config, "agy")
+        agy_routing = "\n".join(
+            f"- `{name}`: model `{agent.get('model', 'flash')}`"
+            for name, agent in agy_agents.items()
+        )
+        sections.append(
+            "## Antigravity Dispatch Syntax\n\n"
+            "When invoking `invoke_subagent`, set `TypeName: \"self\"` (or\n"
+            "`TypeName: \"research\"` for read-only exploration), `Role` to the\n"
+            "agent name, and `Model` according to this routing table. Include the\n"
+            "compact dispatch contract and instruct the subagent to adopt the matching\n"
+            "`.agents/agents/<role>/agent.md` (or `agents/<role>.md`) persona. Never send full conversation history.\n\n"
+            f"{agy_routing}"
+        )
+
+    return "\n\n".join(sections).strip() + "\n"
+
 
 def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_dir: Path, scope: str) -> dict:
     """Compile canonical skills for native discovery and explicit Codex prompts."""
@@ -668,7 +694,10 @@ def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     
     guardrails_block = build_project_guardrails(project)
     
+    agents_scope = config.get("active_provider", "all") if provider_override else provider
     all_outputs = {}
+    if provider in ("all", "claude", "antigravity", "agy"):
+        all_outputs[base_dir / "AGENTS.md"] = compile_agents_md(config, project, guardrails_block, base_dir, agents_scope)
     if provider in ("all", "codex"):
         all_outputs.update(compile_codex(config, project, guardrails_block, base_dir, agents_dir))
     if provider in ("all", "claude"):
@@ -700,7 +729,7 @@ def run_sync(base_dir: Path, provider_override: str = None):
     current = {str(path.relative_to(base_dir)) for path in outputs}
     scope = provider_scope(base_dir, provider_override)
     preserved = set() if scope == "all" else {
-        path for path in previous if output_provider(path) != scope
+        path for path in previous if not provider_matches_scope(output_provider(path), scope)
     }
     for relative in sorted(set(previous) - current - preserved):
         stale = managed_path(base_dir, relative)
@@ -708,9 +737,9 @@ def run_sync(base_dir: Path, provider_override: str = None):
             stale.unlink()
     
     codex_agent_count = 0
-    claude_updated = False
-    antigravity_updated = False
+    claude_agent_count = 0
     antigravity_agent_count = 0
+    agents_md_updated = False
     
     for fpath, content in outputs.items():
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -718,12 +747,12 @@ def run_sync(base_dir: Path, provider_override: str = None):
             f.write(content)
         if ".codex/agents" in fpath.as_posix():
             codex_agent_count += 1
+        elif ".claude/agents" in fpath.as_posix():
+            claude_agent_count += 1
         elif ".agents/agents" in fpath.as_posix() and fpath.name == "agent.md":
             antigravity_agent_count += 1
-        elif fpath.name == "CLAUDE.md":
-            claude_updated = True
         elif fpath.name == "AGENTS.md":
-            antigravity_updated = True
+            agents_md_updated = True
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps({"schema": SCHEMA_NAME, "version": SCHEMA_VERSION,
                                          "files": sorted(current | preserved)}, indent=2) + "\n", encoding="utf-8")
@@ -733,15 +762,14 @@ def run_sync(base_dir: Path, provider_override: str = None):
         except OSError:
             pass
             
+    if agents_md_updated:
+        print("  ✓ Universal: Generated AGENTS.md")
     if codex_agent_count > 0:
         print(f"  ✓ Codex: Compiled {codex_agent_count} agents into .codex/")
-    if claude_updated:
-        print("  ✓ Claude Code: Generated CLAUDE.md")
-    if antigravity_updated:
-        if antigravity_agent_count > 0:
-            print(f"  ✓ Antigravity: Generated AGENTS.md and compiled {antigravity_agent_count} agents into .agents/agents/")
-        else:
-            print("  ✓ Antigravity: Generated AGENTS.md")
+    if claude_agent_count > 0:
+        print(f"  ✓ Claude Code: Compiled {claude_agent_count} agents into .claude/agents/")
+    if antigravity_agent_count > 0:
+        print(f"  ✓ Antigravity: Compiled {antigravity_agent_count} agents into .agents/agents/")
     
     skills_count = sum(1 for p in current if "/skills/" in str(p) or "/prompts/" in str(p))
     if skills_count > 0:
@@ -789,7 +817,7 @@ def run_check(base_dir: Path, provider_override: str = None, quiet: bool = False
         expected = {str(path.relative_to(base_dir)) for path in outputs}
         scope = provider_scope(base_dir, provider_override)
         stale = [Path(path) for path in owned
-                 if path not in expected and (scope == "all" or output_provider(path) == scope)
+                 if path not in expected and provider_matches_scope(output_provider(path), scope)
                  and managed_path(base_dir, path)
                  and managed_path(base_dir, path).exists()]
                 

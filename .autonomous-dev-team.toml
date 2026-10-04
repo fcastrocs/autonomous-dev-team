@@ -120,7 +120,7 @@ reasoning_effort = "medium"
 
 # ==============================================================================
 # ANTHROPIC / CLAUDE CODE CONFIGURATION
-# Generates CLAUDE.md, .claude/agents/*.md, and .claude/skills/*
+# Generates AGENTS.md, .claude/agents/*.md, and .claude/skills/*
 # ==============================================================================
 [claude.orchestrator]
 model = "claude-3-7-sonnet"

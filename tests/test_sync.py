@@ -46,7 +46,7 @@ class TestSyncCompiler(unittest.TestCase):
         # Verify key provider files exist in output map
         output_names = [p.name for p in outputs.keys()]
         self.assertIn("config.toml", output_names)  # .codex/config.toml
-        self.assertIn("CLAUDE.md", output_names)
+        self.assertNotIn("CLAUDE.md", output_names)
         self.assertIn("AGENTS.md", output_names)
         self.assertNotIn("GEMINI.md", output_names)
         self.assertNotIn("orchestrator.toml", output_names)
@@ -70,8 +70,9 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(matches, [], f"Unreplaced placeholders in {fpath.name}: {matches}")
 
         agy_md = outputs.get(BASE_DIR / "AGENTS.md", "")
-        self.assertIn("# Antigravity Delegation Adapter", agy_md)
+        self.assertIn("# Antigravity & Claude Code Delegation Adapter", agy_md)
         self.assertIn("## Antigravity Dispatch Syntax", agy_md)
+        self.assertIn("## Claude Model Routing", agy_md)
 
     def test_provider_filter(self):
         codex_only = sync.generate_all_outputs(BASE_DIR, "codex")
@@ -79,7 +80,8 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertTrue(".codex" in str(fpath) or ".agents" in str(fpath))
 
         claude_only = sync.generate_all_outputs(BASE_DIR, "claude")
-        self.assertTrue(any(p.name == "CLAUDE.md" for p in claude_only))
+        self.assertTrue(any(p.name == "AGENTS.md" for p in claude_only))
+        self.assertFalse(any(p.name == "CLAUDE.md" for p in claude_only))
         self.assertTrue(any(p.name == "SKILL.md" for p in claude_only))
 
         antigravity_only = sync.generate_all_outputs(BASE_DIR, "antigravity")
@@ -173,7 +175,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertTrue((tmppath / ".autonomous-dev-team" / "config.toml").exists())
             self.assertTrue((tmppath / ".autonomous-dev-team" / "manifest.json").exists())
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
-            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertFalse((tmppath / "CLAUDE.md").exists())
             self.assertTrue((tmppath / "AGENTS.md").exists())
             self.assertTrue((tmppath / ".agents" / "skills" / "team" / "SKILL.md").exists())
             self.assertTrue((tmppath / ".claude" / "skills" / "team" / "SKILL.md").exists())
@@ -246,7 +248,6 @@ class TestSyncCompiler(unittest.TestCase):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         for path in (
             BASE_DIR / ".codex" / "config.toml",
-            BASE_DIR / "CLAUDE.md",
             BASE_DIR / "AGENTS.md",
         ):
             self.assertEqual(outputs[path].count(marker), 1, str(path))
@@ -427,7 +428,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertFalse((target / "agents").exists())
             self.assertFalse((target / sync.CONFIG_NAME).exists())
             self.assertTrue((target / "AGENTS.md").exists())
-            self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertFalse((target / "CLAUDE.md").exists())
             self.assertFalse((target / "__pycache__").exists())
             self.assertFalse((target / ".autonomous-dev-team" / "__pycache__").exists())
             self.assertEqual(list(target.glob(".autonomous-dev-team.install.*")), [])
@@ -465,9 +466,7 @@ class TestSyncCompiler(unittest.TestCase):
             agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
             self.assertIn(f'model = "{model}"', agent)
             self.assertIn(f'model_reasoning_effort = "{reasoning}"', agent)
-        claude_md = outputs[BASE_DIR / "CLAUDE.md"]
-        self.assertIn("Use Claude Code's native agent configuration", claude_md)
-        self.assertNotIn("specialist", claude_md.lower())
+        self.assertNotIn(BASE_DIR / "CLAUDE.md", outputs)
         claude_agent = outputs[BASE_DIR / ".claude" / "agents" / "implementer.md"]
         self.assertTrue(claude_agent.startswith("---\nname: implementer\n"))
         self.assertIn("implementer agent for autonomous-dev-team", claude_agent)
@@ -485,20 +484,25 @@ class TestSyncCompiler(unittest.TestCase):
             claude_agent = outputs[BASE_DIR / ".claude" / "agents" / f"{agent_name}.md"]
             self.assertIn("model: claude-3-7-sonnet", claude_agent)
             self.assertIn(f"reasoning effort: {reasoning}", claude_agent)
-        agy_adapter = outputs[BASE_DIR / "AGENTS.md"]
-        self.assertIn("# Antigravity Delegation Adapter", agy_adapter)
-        self.assertIn("Role` to the\nagent name", agy_adapter)
+        agents_md = outputs[BASE_DIR / "AGENTS.md"]
+        self.assertIn("# Antigravity & Claude Code Delegation Adapter", agents_md)
+        self.assertIn("Use Claude Code's native agent configuration", agents_md)
+        self.assertIn("## Claude Model Routing", agents_md)
+        for agent_name, reasoning in expected_claude_reasoning.items():
+            self.assertIn(f"- `{agent_name}`: `claude-3-7-sonnet` (thinking: `{reasoning}`)", agents_md)
+        self.assertIn("## Antigravity Dispatch Syntax", agents_md)
+        self.assertIn("Role` to the\nagent name", agents_md)
         for agent_name in ("harness-optimizer", "agent-evaluator", "security-reviewer",
                            "pr-test-analyzer", "silent-failure-hunter"):
-            self.assertIn(f"- `{agent_name}`: model `flash`", agy_adapter)
-        self.assertNotIn("specialist", agy_adapter.lower())
+            self.assertIn(f"- `{agent_name}`: model `flash`", agents_md)
+        self.assertNotIn("specialist", agents_md.lower())
         self.assertNotIn("GEMINI.md", [p.name for p in outputs])
 
     def test_correctness_first_routing_contract_is_generated(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
+        self.assertNotIn(BASE_DIR / "CLAUDE.md", outputs)
         adapters = (
             outputs[BASE_DIR / ".codex" / "config.toml"],
-            outputs[BASE_DIR / "CLAUDE.md"],
             outputs[BASE_DIR / "AGENTS.md"],
         )
         for content in adapters:
@@ -550,7 +554,8 @@ class TestSyncCompiler(unittest.TestCase):
             sync.run_sync(tmppath, "codex")
             scoped_owned = set(json.loads((tmppath / sync.MANIFEST_NAME).read_text())["files"])
             self.assertEqual(scoped_owned, all_owned)
-            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertFalse((tmppath / "CLAUDE.md").exists())
+            self.assertTrue((tmppath / "AGENTS.md").exists())
             self.assertEqual(sync.run_check(tmppath, "codex"), 0)
             sync.run_sync(tmppath, "all")
             self.assertEqual(set(json.loads((tmppath / sync.MANIFEST_NAME).read_text())["files"]), all_owned)
@@ -765,7 +770,7 @@ class TestSyncCompiler(unittest.TestCase):
 
             self.assertTrue((tmppath / sync.MANIFEST_NAME).exists())
             self.assertFalse((tmppath / ".autonomous-dev-team").exists())
-            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertFalse((tmppath / "CLAUDE.md").exists())
             self.assertTrue((tmppath / "AGENTS.md").exists())
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
@@ -794,7 +799,7 @@ class TestSyncCompiler(unittest.TestCase):
 
             self.assertTrue((client_dir / "manifest.json").exists())
             self.assertFalse((tmppath / sync.MANIFEST_NAME).exists())
-            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertFalse((tmppath / "CLAUDE.md").exists())
             self.assertTrue((tmppath / "AGENTS.md").exists())
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
@@ -832,7 +837,7 @@ class TestSyncCompiler(unittest.TestCase):
             sync.run_sync(tmppath, "all")
 
             self.assertTrue((client_dir / "manifest.json").exists())
-            self.assertTrue((tmppath / "CLAUDE.md").exists())
+            self.assertFalse((tmppath / "CLAUDE.md").exists())
             self.assertTrue((tmppath / "AGENTS.md").exists())
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
@@ -898,6 +903,74 @@ class TestSyncCompiler(unittest.TestCase):
             if args is not None:
                 mock_execv(target_py, args)
             mock_execv.assert_not_called()
+
+    def test_legacy_claude_md_is_unlinked_when_tracked_in_manifest(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            legacy_claude = tmppath / "CLAUDE.md"
+            legacy_claude.write_text(f"{sync.AUTO_GEN_HEADER_MD}\n# Legacy Claude", encoding="utf-8")
+            (tmppath / sync.MANIFEST_NAME).write_text(
+                json.dumps({"schema": sync.SCHEMA_NAME, "version": sync.SCHEMA_VERSION, "files": ["CLAUDE.md"]}),
+                encoding="utf-8"
+            )
+            self.assertTrue(legacy_claude.exists())
+            sync.run_sync(tmppath, "all")
+            self.assertFalse(legacy_claude.exists())
+            manifest = json.loads((tmppath / sync.MANIFEST_NAME).read_text(encoding="utf-8"))
+            self.assertNotIn("CLAUDE.md", manifest["files"])
+            self.assertIn("AGENTS.md", manifest["files"])
+
+    def test_legacy_claude_md_is_unlinked_in_scoped_claude_sync(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            legacy_claude = tmppath / "CLAUDE.md"
+            legacy_claude.write_text(f"{sync.AUTO_GEN_HEADER_MD}\n# Legacy Claude", encoding="utf-8")
+            (tmppath / sync.MANIFEST_NAME).write_text(
+                json.dumps({"schema": sync.SCHEMA_NAME, "version": sync.SCHEMA_VERSION, "files": ["CLAUDE.md"]}),
+                encoding="utf-8"
+            )
+            self.assertTrue(legacy_claude.exists())
+            sync.run_sync(tmppath, "claude")
+            self.assertFalse(legacy_claude.exists())
+            manifest = json.loads((tmppath / sync.MANIFEST_NAME).read_text(encoding="utf-8"))
+            self.assertNotIn("CLAUDE.md", manifest["files"])
+            self.assertIn("AGENTS.md", manifest["files"])
+
+    def test_compile_agents_md_and_output_provider(self):
+        self.assertEqual(sync.output_provider("AGENTS.md"), "shared")
+        self.assertEqual(sync.output_provider("CLAUDE.md"), "claude")
+        self.assertEqual(sync.output_provider(".claude/agents/implementer.md"), "claude")
+        self.assertEqual(sync.output_provider(".agents/agents/implementer/agent.md"), "antigravity")
+        self.assertEqual(sync.output_provider(".codex/config.toml"), "codex")
+
+        config = sync.load_config(sync.resolve_config_path(BASE_DIR))
+        project = config.get("project", {})
+        guardrails = sync.build_project_guardrails(project)
+
+        # Provider: all
+        all_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "all")
+        self.assertIn("# Antigravity & Claude Code Delegation Adapter", all_md)
+        self.assertIn("## Claude Subagent Guidance", all_md)
+        self.assertIn("## Claude Model Routing", all_md)
+        self.assertIn("## Antigravity Dispatch Syntax", all_md)
+
+        # Provider: claude
+        claude_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "claude")
+        self.assertIn("# Claude Code Delegation Adapter", claude_md)
+        self.assertIn("## Claude Subagent Guidance", claude_md)
+        self.assertIn("## Claude Model Routing", claude_md)
+        self.assertNotIn("## Antigravity Dispatch Syntax", claude_md)
+
+        # Provider: antigravity
+        agy_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "antigravity")
+        self.assertIn("# Antigravity Delegation Adapter", agy_md)
+        self.assertNotIn("## Claude Subagent Guidance", agy_md)
+        self.assertNotIn("## Claude Model Routing", agy_md)
+        self.assertIn("## Antigravity Dispatch Syntax", agy_md)
 
 
 if __name__ == "__main__":
