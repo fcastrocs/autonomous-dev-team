@@ -306,7 +306,7 @@ The user and repository protocol explicitly ask for sub-agents, delegation, and 
     config_lines = [
         AUTO_GEN_HEADER_TOML,
         "# Root Orchestrator configuration",
-        f'model = "{orch.get("model", "gpt-5.6-terra")}"',
+        f'model = "{orch.get("model", "gpt-6.1-sol")}"',
         f'model_reasoning_effort = "{orch.get("reasoning_effort", "low")}"',
         f'plan_mode_reasoning_effort = "{orch.get("plan_mode_reasoning_effort", "medium")}"',
         f'tool_output_token_limit = {orch.get("tool_output_token_limit", 6000)}',
@@ -329,7 +329,7 @@ The user and repository protocol explicitly ask for sub-agents, delegation, and 
         agent_name = afile.stem
         a_conf = agents_conf.get(agent_name, {})
         desc = a_conf.get("description", f"Agent: {agent_name}")
-        model = a_conf.get("model", "gpt-5.6-luna")
+        model = a_conf.get("model", "gpt-6-luna")
         reasoning = a_conf.get("reasoning_effort", "low")
         
         config_lines.append(f"[agents.{agent_name}]")

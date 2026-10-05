@@ -210,7 +210,7 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertEqual(parsed["codex"]["agents"]["implementer"]["reasoning_effort"], "medium")
         self.assertEqual(parsed["claude"]["agents"]["implementer"]["thinking"], "medium")
         self.assertEqual(parsed["antigravity"]["agents"]["implementer"]["reasoning"], "medium")
-        self.assertEqual(parsed["codex"]["orchestrator"]["model"], "gpt-5.6-sol")
+        self.assertEqual(parsed["codex"]["orchestrator"]["model"], "gpt-6.1-sol")
         self.assertEqual(parsed["codex"]["orchestrator"]["reasoning_effort"], "low")
         expected_reasoning = {
             "harness-optimizer": "high",
@@ -220,7 +220,7 @@ class TestSyncCompiler(unittest.TestCase):
             "silent-failure-hunter": "medium",
         }
         for role, reasoning in expected_reasoning.items():
-            expected_codex_model = "gpt-5.6-sol" if role == "harness-optimizer" else "gpt-5.6-terra"
+            expected_codex_model = "gpt-6.1-sol"
             self.assertEqual(parsed["codex"]["agents"][role]["model"], expected_codex_model)
             expected_codex_reasoning = "high" if role == "security-reviewer" else "medium"
             self.assertEqual(parsed["codex"]["agents"][role]["reasoning_effort"], expected_codex_reasoning)
@@ -440,7 +440,7 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertIn("[agents.code-explorer]", codex)
         self.assertNotIn("[agents]\n", codex)
         self.assertNotIn("[agents.orchestrator]", codex)
-        self.assertIn('model = "gpt-5.6-sol"', codex)
+        self.assertIn('model = "gpt-6.1-sol"', codex)
         self.assertIn('model_reasoning_effort = "low"', codex)
         self.assertIn("tool_output_token_limit = 6000", codex)
         self.assertIn("model_auto_compact_token_limit = 45000", codex)
@@ -454,13 +454,13 @@ class TestSyncCompiler(unittest.TestCase):
             agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
             self.assertIn('model_reasoning_effort = "low"', agent)
         validator = outputs[BASE_DIR / ".codex" / "agents" / "code-validator.toml"]
-        self.assertIn('model = "gpt-5.6-terra"', validator)
+        self.assertIn('model = "gpt-6-luna"', validator)
         expected_codex = {
-            "harness-optimizer": ("gpt-5.6-sol", "medium"),
-            "agent-evaluator": ("gpt-5.6-terra", "medium"),
-            "security-reviewer": ("gpt-5.6-terra", "high"),
-            "pr-test-analyzer": ("gpt-5.6-terra", "medium"),
-            "silent-failure-hunter": ("gpt-5.6-terra", "medium"),
+            "harness-optimizer": ("gpt-6.1-sol", "medium"),
+            "agent-evaluator": ("gpt-6.1-sol", "medium"),
+            "security-reviewer": ("gpt-6.1-sol", "high"),
+            "pr-test-analyzer": ("gpt-6.1-sol", "medium"),
+            "silent-failure-hunter": ("gpt-6.1-sol", "medium"),
         }
         for agent_name, (model, reasoning) in expected_codex.items():
             agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]

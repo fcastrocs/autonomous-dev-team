@@ -149,7 +149,7 @@ Select active providers and models in `.autonomous-dev-team/config.toml`:
 active_provider = "codex"
 
 [codex.orchestrator]
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 reasoning_effort = "low"
 ```
 

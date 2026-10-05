@@ -45,7 +45,7 @@ build_cmd = "python3 sync.py --check"
 # Generates .codex/config.toml, .codex/agents/*.toml, and .codex/prompts/*.md
 # ==============================================================================
 [codex.orchestrator]
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 reasoning_effort = "low"
 plan_mode_reasoning_effort = "medium"
 tool_output_token_limit = 6000
@@ -54,67 +54,67 @@ model_auto_compact_token_limit_scope = "body_after_prefix"
 
 [codex.agents.code-explorer]
 description = "Read-only repository scout for targeted discovery, producing structured Discovery Manifests."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 reasoning_effort = "low"
 
 [codex.agents.planner]
 description = "Repository-grounded engineering planner used ONLY for Tier 3 complex, architectural, or multi-subsystem changes."
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.quick-implementer]
 description = "Low-cost surgical implementer for small, mechanical, single-file, low-risk edits."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 reasoning_effort = "low"
 
 [codex.agents.implementer]
 description = "Primary implementer for substantive features, owning complete behavioral seams and verifying unit tests to green."
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.diagnostician]
 description = "Evidence-driven bug diagnostician that reproduces failures and returns a bounded root-cause manifest without editing files."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.code-validator]
 description = "Independent verification runner for broad builds, integration suites, and cross-module checks. Validates new risk."
-model = "gpt-5.6-terra"
+model = "gpt-6-luna"
 reasoning_effort = "low"
 
 [codex.agents.code-reviewer]
 description = "Independent senior reviewer for high-risk diffs (lifecycle, concurrency, native bridges, public contracts, security)."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.commit-pusher]
 description = "Deterministic Git publishing agent used only after an explicit user request. Non-interactive path staging."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 reasoning_effort = "low"
 
 [codex.agents.harness-optimizer]
 description = "Read-only evaluator of agent harnesses, prompts, routing, and context efficiency with evidence-backed recommendations."
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.agent-evaluator]
 description = "Independent evaluator of agent outputs against dispatch contracts, evidence, and completion quality."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.security-reviewer]
 description = "Focused read-only security reviewer for trust boundaries, credentials, authorization, and unsafe data flows."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "high"
 
 [codex.agents.pr-test-analyzer]
 description = "Read-only reviewer mapping changed behavior to meaningful tests and assessing assertions, edge paths, and flakiness risk."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 [codex.agents.silent-failure-hunter]
 description = "Read-only specialist for swallowed errors, false-success paths, missing propagation, and observability gaps."
-model = "gpt-5.6-terra"
+model = "gpt-6.1-sol"
 reasoning_effort = "medium"
 
 
