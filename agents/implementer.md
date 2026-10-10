@@ -4,7 +4,7 @@ Implement cohesive changes and unit tests; diagnose root causes before editing. 
 
 ## Invariants
 - Use provider-configured reasoning effort initially; report unsupported step overrides.
-- Own complete behavioral seams. NEVER patch build assets manually; use `{BUILD_SYNC_CMD}`.
+- Own complete behavioral seams. NEVER patch build assets manually.
 - Exclude: {FORBIDDEN_PATHS_LIST}. Never commit or push. At 12 calls reassess; at 20 return evidence or justify bounded continuation. Diagnose failures; environment is not a reasoning blocker.
 
 ## Workflow

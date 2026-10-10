@@ -3,7 +3,7 @@
 Autonomous Multi-Agent Protocol — Synchronizer & Compiler
 Single source of truth compiler: merges .autonomous-dev-team.toml, agents/*.md, and skills/
 into provider-specific configurations (.codex/, .claude/, .agents/, AGENTS.md).
-Includes stack auto-detection, zero-friction init, and CI consistency checks.
+Includes zero-friction init (blank [project] fields for repo owners) and CI consistency checks.
 """
 # ==============================================================================
 # ARCHITECTURAL RULE / INVARIANT:
@@ -438,36 +438,34 @@ def get_effective_forbidden_paths(project: dict) -> list[str]:
             configured.append(p)
     return configured
 
+def project_command(project: dict, key: str) -> str:
+    """Returns a configured [project] command, or a short visible marker when the repo owner has not set it."""
+    return project.get(key) or f"UNSET ({key})"
+
 def build_project_guardrails(project: dict) -> str:
     lines = []
-    
+
     subsystems = project.get("subsystems", [])
     if subsystems:
         sub_desc = ", ".join([f"`{s['name']}` ({s.get('path', '')} — {s.get('stack', '')})" for s in subsystems])
         lines.append(f"- **Subsystem Boundaries**: {sub_desc}")
         lines.append("  * *Isolation Rule*: Never combine disjoint subsystems in one implementation slice.")
-    
+
     forbidden = get_effective_forbidden_paths(project)
     if forbidden:
         forb_desc = ", ".join([f"`{p}`" for p in forbidden])
         lines.append(f"- **Forbidden Build/Generated Paths**: {forb_desc}")
         lines.append("  * *Rule*: Strictly forbidden from manually editing, copying, diffing, or staging these paths.")
-        
-    build_sync = project.get("build_sync_cmd")
-    if build_sync:
-        lines.append(f"- **Deterministic Build Sync**: `{build_sync}` (Automated build command; never spawn an agent to manually patch build artifacts).")
-        
-    focused_test = project.get("focused_test_cmd", "npm test -- {file}")
+
+    focused_test = project_command(project, "focused_test_cmd")
     lines.append(f"- **Focused Unit Verification**: `{focused_test}` (Implementer must execute narrow tests to green before handoff).")
-    
-    full_test = project.get("full_test_cmd")
-    if full_test:
-        lines.append(f"- **Validation Suite**: `{full_test}` (Independent broader verification owned by verifier).")
-        
-    build_cmd = project.get("build_cmd")
-    if build_cmd:
-        lines.append(f"- **Build / Package Verification**: `{build_cmd}` (Owned by verifier).")
-        
+
+    full_test = project_command(project, "full_test_cmd")
+    lines.append(f"- **Validation Suite**: `{full_test}` (Independent broader verification owned by verifier).")
+
+    build_cmd = project_command(project, "build_cmd")
+    lines.append(f"- **Build / Package Verification**: `{build_cmd}` (Owned by verifier).")
+
     return "\n".join(lines)
 
 def interpolate_prompt(template_text: str, project: dict, guardrails_block: str,
@@ -498,10 +496,9 @@ def interpolate_prompt(template_text: str, project: dict, guardrails_block: str,
         "{PROJECT_GUARDRAILS}": guardrails_block,
         "{FORBIDDEN_PATHS_LIST}": forbidden_list,
         "{FORBIDDEN_PATHS_GLOB}": forbidden_globs,
-        "{BUILD_SYNC_CMD}": project.get("build_sync_cmd", "npm run build"),
-        "{FOCUSED_TEST_CMD}": project.get("focused_test_cmd", "npm test -- {file}"),
-        "{FULL_TEST_CMD}": project.get("full_test_cmd", "npm test"),
-        "{BUILD_CMD}": project.get("build_cmd", "npm run build"),
+        "{FOCUSED_TEST_CMD}": project_command(project, "focused_test_cmd"),
+        "{FULL_TEST_CMD}": project_command(project, "full_test_cmd"),
+        "{BUILD_CMD}": project_command(project, "build_cmd"),
         "{SUBSYSTEMS_RULE}": sub_rule,
         "{SUBSYSTEMS_LIST}": sub_names,
         "{ROLE_RULES_PATH}": role_rules_path,
@@ -779,118 +776,8 @@ def compile_skills(project: dict, guardrails_block: str, base_dir: Path, skills_
                 
     return outputs
 
-def detect_project_stack(target_dir: Path) -> dict:
-    """
-    Inspects target_dir and detects project stack, build/test commands, and forbidden paths.
-    Returns a dictionary suitable for generating .autonomous-dev-team.toml.
-    """
-    project_name = target_dir.resolve().name
-    
-    # 1. Check Node / TypeScript / JavaScript
-    pkg_json_path = target_dir / "package.json"
-    if pkg_json_path.exists():
-        try:
-            with open(pkg_json_path, "r", encoding="utf-8") as f:
-                pkg_data = json.load(f)
-        except Exception:
-            pkg_data = {}
-            
-        desc = pkg_data.get("description") or "Node.js application"
-        scripts = pkg_data.get("scripts", {})
-        
-        # Package manager detection
-        if (target_dir / "pnpm-lock.yaml").exists():
-            pm = "pnpm"
-        elif (target_dir / "yarn.lock").exists():
-            pm = "yarn"
-        elif (target_dir / "bun.lockb").exists() or (target_dir / "bun.lock").exists():
-            pm = "bun"
-        else:
-            pm = "npm"
-            
-        has_build = "build" in scripts
-        has_test = "test" in scripts
-        has_int_test = any(k in scripts for k in ["test:integration", "test:e2e", "integration", "test:all"])
-        
-        return {
-            "name": project_name,
-            "description": desc,
-            "stack": "Node.js",
-            "forbidden_paths": ["dist/**", "build/**", "coverage/**", "node_modules/**"],
-            "build_sync_cmd": f"{pm} run build" if has_build else "",
-            "focused_test_cmd": f"{pm} test -- {{file}}" if has_test else f"{pm} test",
-            "full_test_cmd": f"{pm} run test:integration" if has_int_test else (f"{pm} test" if has_test else ""),
-            "build_cmd": f"{pm} run build" if has_build else "",
-            "subsystems": []
-        }
-        
-    # 2. Check Rust
-    cargo_path = target_dir / "Cargo.toml"
-    if cargo_path.exists():
-        return {
-            "name": project_name,
-            "description": "Rust application",
-            "stack": "Rust",
-            "forbidden_paths": ["target/**"],
-            "build_sync_cmd": "cargo build",
-            "focused_test_cmd": "cargo test -- {test_name}",
-            "full_test_cmd": "cargo test",
-            "build_cmd": "cargo build",
-            "subsystems": []
-        }
-
-    # 3. Check Go
-    go_mod_path = target_dir / "go.mod"
-    if go_mod_path.exists():
-        return {
-            "name": project_name,
-            "description": "Go application",
-            "stack": "Go",
-            "forbidden_paths": ["bin/**", "vendor/**"],
-            "build_sync_cmd": "go build ./...",
-            "focused_test_cmd": "go test -run {test_name} ./...",
-            "full_test_cmd": "go test ./...",
-            "build_cmd": "go build ./...",
-            "subsystems": []
-        }
-
-    # 4. Check Python
-    is_python = any((target_dir / p).exists() for p in [
-        "pyproject.toml", "requirements.txt", "setup.py", "pytest.ini", "tox.ini"
-    ]) or list(target_dir.glob("*.py"))
-    
-    if is_python:
-        has_pytest = (target_dir / "pytest.ini").exists() or (target_dir / "conftest.py").exists()
-        focused_cmd = "python3 -m pytest {file}" if has_pytest else "python3 -m unittest {file}"
-        full_cmd = "pytest" if has_pytest else "python3 -m unittest discover tests"
-        
-        return {
-            "name": project_name,
-            "description": "Python application",
-            "stack": "Python",
-            "forbidden_paths": [".git/**", "__pycache__/**", "dist/**", "build/**", ".venv/**", ".pytest_cache/**"],
-            "build_sync_cmd": "",
-            "focused_test_cmd": focused_cmd,
-            "full_test_cmd": full_cmd,
-            "build_cmd": "python3 -m compileall .",
-            "subsystems": []
-        }
-
-    # 5. Default generic fallback
-    return {
-        "name": project_name,
-        "description": "Software project",
-        "stack": "Generic",
-        "forbidden_paths": ["dist/**", "build/**", ".cache/**"],
-        "build_sync_cmd": "",
-        "focused_test_cmd": "make test",
-        "full_test_cmd": "make test",
-        "build_cmd": "make build",
-        "subsystems": []
-    }
-
-def generate_project_config_toml(stack_info: dict, source_dir: Path = None, active_provider: str = "all") -> str:
-    """Tailor the canonical config's project section using TOML-safe values."""
+def generate_project_config_toml(project_name: str, source_dir: Path = None, active_provider: str = "all") -> str:
+    """Render the canonical config for a new repo: project name set, repo-owned [project] fields left blank."""
     base_dir = source_dir or resolve_base_dir()
     canonical = read_canonical_source(base_dir, Path(CONFIG_NAME))
     
@@ -904,13 +791,11 @@ def generate_project_config_toml(stack_info: dict, source_dir: Path = None, acti
     
     tomllib.loads(canonical)
     values = {
-        "name": stack_info.get("name", "project"),
-        "description": stack_info.get("description", "Autonomous Multi-Agent Repository"),
-        "forbidden_paths": stack_info.get("forbidden_paths", []),
-        "build_sync_cmd": stack_info.get("build_sync_cmd", ""),
-        "focused_test_cmd": stack_info.get("focused_test_cmd", "npm test -- {file}"),
-        "full_test_cmd": stack_info.get("full_test_cmd", "npm test"),
-        "build_cmd": stack_info.get("build_cmd", ""),
+        "name": project_name,
+        "description": "",
+        "focused_test_cmd": "",
+        "full_test_cmd": "",
+        "build_cmd": "",
     }
     lines = canonical.splitlines(keepends=True)
     project_start = next((i for i, line in enumerate(lines) if line.strip() == "[project]"), None)
@@ -1210,17 +1095,14 @@ def run_check(base_dir: Path, provider_override: str = None, quiet: bool = False
 
 def run_verify(base_dir: Path, hook_mode: bool = False) -> int:
     """
-    Executes configured verification commands from [verify] section.
+    Executes the configured [project] build_cmd and full_test_cmd, skipping any left blank.
     Exits 0 if all pass, 1 if any fail.
     When hook_mode is True, formats stdout as an Antigravity Stop hook JSON response.
     """
     config_path = resolve_config_path(base_dir)
     config = load_config(config_path)
-    verify_cmds = config.get("verify", {}).get("commands", [])
-    if not verify_cmds:
-        full_test = config.get("project", {}).get("full_test_cmd", "")
-        build_cmd = config.get("project", {}).get("build_cmd", "")
-        verify_cmds = [c for c in [build_cmd, full_test] if c]
+    project = config.get("project", {})
+    verify_cmds = [c for c in [project.get("build_cmd", ""), project.get("full_test_cmd", "")] if c]
 
     all_passed = True
     for cmd in verify_cmds:
@@ -1560,27 +1442,20 @@ def run_init(target_dir: Path, provider_override: str = None, source_dir: Path =
             config_path = target_dir / ENCAPSULATED_DIR_NAME / CLIENT_CONFIG_NAME
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        print("  🔍 Detecting project stack...")
-        stack_info = detect_project_stack(target_dir)
-        print(f"  ✓ Detected stack: {stack_info.get('stack')} ({stack_info.get('name')})")
-        if stack_info.get("focused_test_cmd"):
-            print(f"    - Test command: {stack_info.get('focused_test_cmd')}")
-        if stack_info.get("build_cmd"):
-            print(f"    - Build command: {stack_info.get('build_cmd')}")
-
         config_content = generate_project_config_toml(
-            stack_info, source_dir=source_dir, active_provider=provider_override or "all"
+            target_dir.resolve().name, source_dir=source_dir, active_provider=provider_override or "all"
         )
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
-        print(f"  ✓ Generated tailored {config_path.name} for {stack_info.get('name')}")
+        print(f"  ✓ Generated {config_path.name} with blank [project] fields.")
+        print("    Define focused_test_cmd, full_test_cmd, and build_cmd before relying on agent verification.")
 
     run_sync(target_dir, provider_override)
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Multi-Agent Protocol — Synchronizer & Compiler")
     parser.add_argument("--init", nargs="?", const=".", default=None, metavar="DIR",
-                        help="Initialize configuration with auto-detected stack in target directory (defaults to current dir) and compile.")
+                        help="Initialize configuration with blank [project] fields in target directory (defaults to current dir) and compile.")
     parser.add_argument("--check", action="store_true",
                         help="Check whether generated provider files are in sync (exits with 0 if up-to-date, 1 if out-of-sync).")
     parser.add_argument("--team", "--status", action="store_true", dest="team",

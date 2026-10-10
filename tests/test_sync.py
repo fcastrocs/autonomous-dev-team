@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Unit tests for Autonomous Multi-Agent Protocol synchronizer (sync.py).
-Verifies stack auto-detection, multi-provider compilation, placeholder integrity,
+Verifies blank project config generation, multi-provider compilation, placeholder integrity,
 and --check consistency.
 """
 
@@ -114,70 +114,6 @@ class TestSyncCompiler(unittest.TestCase):
             sync.run_sync(tmppath)
             self.assertEqual(sync.run_check(tmppath), 0)
 
-    def test_detect_project_stack_node(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            pkg_json = {
-                "name": "my-express-app",
-                "description": "Backend API",
-                "scripts": {
-                    "build": "tsc",
-                    "test": "jest",
-                    "test:integration": "jest --config jest.integration.js"
-                }
-            }
-            with open(tmppath / "package.json", "w", encoding="utf-8") as f:
-                json.dump(pkg_json, f)
-
-            stack = sync.detect_project_stack(tmppath)
-            self.assertEqual(stack["stack"], "Node.js")
-            self.assertEqual(stack["name"], tmppath.name)
-            self.assertEqual(stack["build_sync_cmd"], "npm run build")
-            self.assertEqual(stack["focused_test_cmd"], "npm test -- {file}")
-            self.assertEqual(stack["full_test_cmd"], "npm run test:integration")
-
-    def test_detect_project_stack_python(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "pyproject.toml").touch()
-            (tmppath / "pytest.ini").touch()
-
-            stack = sync.detect_project_stack(tmppath)
-            self.assertEqual(stack["stack"], "Python")
-            self.assertIn("pytest", stack["focused_test_cmd"])
-            self.assertIn("__pycache__/**", stack["forbidden_paths"])
-
-    def test_detect_project_stack_python_unittest_only(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "pyproject.toml").touch()
-            (tmppath / "tests").mkdir()
-            (tmppath / "tests" / "test_something.py").touch()
-
-            stack = sync.detect_project_stack(tmppath)
-            self.assertEqual(stack["stack"], "Python")
-            self.assertEqual(stack["focused_test_cmd"], "python3 -m unittest {file}")
-            self.assertEqual(stack["full_test_cmd"], "python3 -m unittest discover tests")
-
-    def test_detect_project_stack_rust(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "Cargo.toml").touch()
-
-            stack = sync.detect_project_stack(tmppath)
-            self.assertEqual(stack["stack"], "Rust")
-            self.assertEqual(stack["build_cmd"], "cargo build")
-            self.assertIn("target/**", stack["forbidden_paths"])
-
-    def test_detect_project_stack_go(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmppath = Path(tmpdir)
-            (tmppath / "go.mod").touch()
-
-            stack = sync.detect_project_stack(tmppath)
-            self.assertEqual(stack["stack"], "Go")
-            self.assertIn("go test", stack["full_test_cmd"])
-
     def test_init_in_scratch_project(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
@@ -198,26 +134,25 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertTrue((tmppath / ".codex" / "prompts" / "team.md").exists())
             self.assertFalse((tmppath / "GEMINI.md").exists())
             
-            # Check content of generated config
-            with open(tmppath / ".autonomous-dev-team" / "config.toml", "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertIn('Python', content)
+            # Check content of generated config: repo-owned [project] fields are blank
+            with open(tmppath / ".autonomous-dev-team" / "config.toml", "rb") as f:
+                parsed = sync.tomllib.load(f)
+            self.assertEqual(parsed["project"]["name"], tmppath.name)
+            self.assertEqual(parsed["project"]["description"], "")
+            self.assertEqual(parsed["project"]["focused_test_cmd"], "")
+            self.assertEqual(parsed["project"]["full_test_cmd"], "")
+            self.assertEqual(parsed["project"]["build_cmd"], "")
+            self.assertNotIn("build_sync_cmd", parsed["project"])
+            self.assertNotIn("verify", parsed)
 
     def test_canonical_config_tailoring_is_toml_safe_and_complete(self):
-        stack = {
-            "name": 'quoted "project"',
-            "description": "line one\nline two\\end",
-            "forbidden_paths": ['build/"quoted"', "tmp\\cache"],
-            "build_sync_cmd": "python3 sync.py",
-            "focused_test_cmd": "test {file}",
-            "full_test_cmd": "test all",
-            "build_cmd": "build",
-        }
-        rendered = sync.generate_project_config_toml(stack, BASE_DIR)
+        project_name = 'quoted "project"'
+        rendered = sync.generate_project_config_toml(project_name, BASE_DIR)
         parsed = sync.tomllib.loads(rendered)
         self.assertEqual(parsed["schema_version"], 2)
-        self.assertEqual(parsed["project"]["name"], stack["name"])
-        self.assertEqual(parsed["project"]["description"], stack["description"])
+        self.assertEqual(parsed["project"]["name"], project_name)
+        self.assertNotIn("build_sync_cmd", parsed["project"])
+        self.assertNotIn("verify", parsed)
         self.assertEqual(len(parsed["agents"]), 3)
         self.assertIn("architect", parsed["agents"])
         self.assertEqual(parsed["agents"]["architect"]["tier"], "balanced")
@@ -1373,8 +1308,7 @@ schema_version = 2
 active_provider = "all"
 [project]
 name = "test-proj"
-[verify]
-commands = ["python3 -c \\"import sys; sys.exit(0)\\""]
+build_cmd = "python3 -c \\"import sys; sys.exit(0)\\""
 """
             (tmppath / sync.CONFIG_NAME).write_text(pass_cfg.strip() + "\n", encoding="utf-8")
 
@@ -1412,8 +1346,7 @@ schema_version = 2
 active_provider = "all"
 [project]
 name = "test-proj"
-[verify]
-commands = ["python3 -c \\"import sys; sys.exit(1)\\""]
+build_cmd = "python3 -c \\"import sys; sys.exit(1)\\""
 """
             (tmppath / sync.CONFIG_NAME).write_text(fail_cfg.strip() + "\n", encoding="utf-8")
 
@@ -1445,6 +1378,21 @@ commands = ["python3 -c \\"import sys; sys.exit(1)\\""]
             self.assertEqual(res_fail_hook.returncode, 0)
             payload_fail = json.loads(res_fail_hook.stdout.strip())
             self.assertEqual(payload_fail["decision"], "continue")
+
+    def test_blank_project_commands_are_marked_and_skipped(self):
+        self.assertEqual(sync.project_command({}, "focused_test_cmd"), "UNSET (focused_test_cmd)")
+        self.assertEqual(sync.project_command({"build_cmd": "make"}, "build_cmd"), "make")
+        guardrails = sync.build_project_guardrails({"name": "blank"})
+        self.assertIn("UNSET (build_cmd)", guardrails)
+        self.assertNotIn("Deterministic Build Sync", guardrails)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            (tmppath / sync.CONFIG_NAME).write_text(
+                'schema_version = 2\nactive_provider = "all"\n[project]\nname = "blank"\nbuild_cmd = ""\nfull_test_cmd = ""\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(sync.run_verify(tmppath, hook_mode=False), 0)
 
     def test_antigravity_hooks_generation(self):
         hooks_content = sync.compile_antigravity_hooks(BASE_DIR)

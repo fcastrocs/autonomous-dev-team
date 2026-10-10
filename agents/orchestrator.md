@@ -7,7 +7,6 @@
 {PROJECT_GUARDRAILS}
 
 - Keep disjoint subsystems in separate implementation slices.
-- Use deterministic build synchronization: `{BUILD_SYNC_CMD}`.
 - **Configuration Invariant**: `.autonomous-dev-team.toml` is the sole source of truth for all provider models, reasoning tiers, token limits, and agent settings. Never modify `sync.py` to hardcode, patch, or inject model configurations or provider-specific settings.
 - Never use interactive Git commands.
 - Limit file reads to 60 lines, diffs to `git diff -U3`, and broad output to the last 25 lines.

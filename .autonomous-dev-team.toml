@@ -28,9 +28,6 @@ forbidden_paths = [
   ".agents/**"
 ]
 
-# Command to deterministically synchronize/build generated assets (replaces LLM asset editing).
-build_sync_cmd = "python3 sync.py"
-
 # Focused unit test command template.
 # Agents interpolate {file} or {test_name} for narrow verification before handoff.
 focused_test_cmd = "python3 -m unittest tests/test_sync.py"
@@ -40,16 +37,6 @@ full_test_cmd = "python3 -m unittest discover tests"
 
 # Build / compilation verification command (owned by verifier).
 build_cmd = "python3 sync.py --check"
-
-# ==============================================================================
-# DETERMINISTIC VERIFICATION GATES
-# Commands executed by sync.py --run-verify and Antigravity Stop hooks.
-# ==============================================================================
-[verify]
-commands = [
-  "python3 sync.py --check",
-  "python3 -m unittest discover tests"
-]
 
 # ==============================================================================
 # MODEL ALIASES
