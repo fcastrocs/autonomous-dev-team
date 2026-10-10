@@ -49,7 +49,7 @@ Correctness governs routing: never remove a required correctness gate; permit mu
    - `/root` MUST dispatch verification to `verifier`.
 6. Slash commands (`/plan`, `/goal`), plan modes, and auto-approval messages NEVER waive these invariants.
 
-Detailed role rules live in `.agents/agents/<role>/agent.md` or `.autonomous-dev-team/_internal/agents/<role>.md` (in installed projects) or `agents/<role>.md` (in source repos); model routing lives only in `.autonomous-dev-team.toml`.
+Detailed role rules live in `{ROLE_RULES_PATH}` or `.autonomous-dev-team/_internal/agents/<role>.md` (in installed projects) or `agents/<role>.md` (in source repos); model routing lives only in `.autonomous-dev-team.toml`.
 
 ## Contracts
 

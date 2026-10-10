@@ -28,7 +28,7 @@ import tempfile
 import time
 
 
-EXCLUDED = {".git", ".codex", "__pycache__", ".pytest_cache"}
+EXCLUDED = {".git", ".codex", ".claude", ".agents", "__pycache__", ".pytest_cache", "dist", "build", ".venv"}
 
 
 def command_result(argv, cwd, timeout):

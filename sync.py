@@ -168,9 +168,10 @@ def read_canonical_source(base_dir: Path, relative_path: Path) -> str:
     raise FileNotFoundError(f"Required canonical source is missing: {base_dir / relative_path}")
 
 
-def compile_orchestrator_protocol(base_dir: Path, project: dict, guardrails_block: str) -> str:
+def compile_orchestrator_protocol(base_dir: Path, project: dict, guardrails_block: str,
+                                   provider: str = "all") -> str:
     source = read_canonical_source(base_dir, ORCHESTRATOR_PROTOCOL)
-    return interpolate_prompt(source, project, guardrails_block).strip()
+    return interpolate_prompt(source, project, guardrails_block, provider=provider).strip()
 
 
 def resolve_provider(provider: str) -> str:
@@ -427,6 +428,16 @@ def provider_matches_scope(file_provider: str, scope: str) -> bool:
         return norm_scope in ("claude", "antigravity")
     return file_provider == norm_scope
 
+PROVIDER_GENERATED_PATHS = [".codex/**", ".claude/**", ".agents/**"]
+
+def get_effective_forbidden_paths(project: dict) -> list[str]:
+    """Returns forbidden paths ensuring engine-generated provider directories are always included."""
+    configured = list(project.get("forbidden_paths", []))
+    for p in PROVIDER_GENERATED_PATHS:
+        if p not in configured:
+            configured.append(p)
+    return configured
+
 def build_project_guardrails(project: dict) -> str:
     lines = []
     
@@ -436,7 +447,7 @@ def build_project_guardrails(project: dict) -> str:
         lines.append(f"- **Subsystem Boundaries**: {sub_desc}")
         lines.append("  * *Isolation Rule*: Never combine disjoint subsystems in one implementation slice.")
     
-    forbidden = project.get("forbidden_paths", [])
+    forbidden = get_effective_forbidden_paths(project)
     if forbidden:
         forb_desc = ", ".join([f"`{p}`" for p in forbidden])
         lines.append(f"- **Forbidden Build/Generated Paths**: {forb_desc}")
@@ -459,15 +470,28 @@ def build_project_guardrails(project: dict) -> str:
         
     return "\n".join(lines)
 
-def interpolate_prompt(template_text: str, project: dict, guardrails_block: str) -> str:
-    forbidden = project.get("forbidden_paths", [])
+def interpolate_prompt(template_text: str, project: dict, guardrails_block: str,
+                       provider: str = "all") -> str:
+    forbidden = get_effective_forbidden_paths(project)
     forbidden_list = ", ".join([f"`{p}`" for p in forbidden]) if forbidden else "None"
     forbidden_globs = " ".join([f"--glob '!{p}'" for p in forbidden]) if forbidden else ""
-    
+
     subsystems = project.get("subsystems", [])
-    sub_names = " vs ".join([s["name"] for s in subsystems]) if subsystems else "different subsystems"
-    sub_rule = f"Never combine {sub_names} in a single implementation slice unless verifying an explicit cross-stack contract test."
-    
+    if subsystems:
+        sub_names = " vs ".join([s["name"] for s in subsystems])
+        sub_rule = f"Never combine {sub_names} in a single implementation slice unless verifying an explicit cross-stack contract test."
+    else:
+        sub_names = "different subsystems"
+        sub_rule = "Respect boundaries across distinct subsystems."
+
+    _provider = "antigravity" if provider == "agy" else provider
+    if _provider == "claude":
+        role_rules_path = ".claude/agents/<role>.md"
+    elif _provider == "codex":
+        role_rules_path = ".codex/agents/<role>.toml"
+    else:
+        role_rules_path = ".agents/agents/<role>/agent.md"
+
     replacements = {
         "{PROJECT_NAME}": project.get("name", "Project"),
         "{PROJECT_DESCRIPTION}": project.get("description", ""),
@@ -480,8 +504,9 @@ def interpolate_prompt(template_text: str, project: dict, guardrails_block: str)
         "{BUILD_CMD}": project.get("build_cmd", "npm run build"),
         "{SUBSYSTEMS_RULE}": sub_rule,
         "{SUBSYSTEMS_LIST}": sub_names,
+        "{ROLE_RULES_PATH}": role_rules_path,
     }
-    
+
     text = template_text
     for placeholder, val in replacements.items():
         text = text.replace(placeholder, val)
@@ -496,7 +521,7 @@ def compile_codex(config: dict, project: dict, guardrails_block: str, base_dir: 
     codex_dir = base_dir / ".codex"
     out_agents_dir = codex_dir / "agents"
     
-    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block, provider="codex")
     dev_instructions = f"""# Codex delegation adapter
 MANDATORY MULTI-AGENT INSTRUCTION:
 The user and repository protocol explicitly ask for sub-agents, delegation, and parallel agent work for all non-trivial tasks.
@@ -599,7 +624,7 @@ def compile_claude(config: dict, project: dict, guardrails_block: str,
     orch_effort = orch_conf.get("thinking", "low")
     orch_desc = f"Root orchestrator agent for {project.get('name', 'project')} (reasoning effort: {orch_effort}; {effort_delivery(config, 'claude')})."
 
-    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block)
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block, provider="claude")
 
     claude_routing = "\n".join(
         f"- `{name}`: `{agent.get('model', 'inherit')}` "
@@ -675,7 +700,6 @@ model: {model}
 ---
 
 {AUTO_GEN_HEADER_MD}
-# {role} Persona
 
 {compiled_instructions.strip()}
 """
@@ -706,7 +730,7 @@ def compile_antigravity_hooks(base_dir: Path) -> str:
 
 
 def compile_agents_md(config: dict, project: dict, guardrails_block: str,
-                      base_dir: Path, provider: str = "all") -> str:
+                      base_dir: Path) -> str:
     """Compiles slim ambient AGENTS.md with project metadata, forbidden paths, and build/test commands only."""
     sections = [AUTO_GEN_HEADER_MD]
     project_name = project.get("name", "Project")
@@ -928,15 +952,15 @@ def generate_all_outputs(base_dir: Path, provider_override: str = None) -> dict:
     config_path = resolve_config_path(base_dir)
     agents_dir = resolve_agents_dir(base_dir)
     config = load_config(config_path)
-    project = config.get("project", {})
+    project = dict(config.get("project", {}))
+    project["forbidden_paths"] = get_effective_forbidden_paths(project)
     provider = provider_override or config.get("active_provider", "all")
     
     guardrails_block = build_project_guardrails(project)
     
-    agents_scope = config.get("active_provider", "all") if provider_override else provider
     all_outputs = {}
     if provider in ("all", "claude", "antigravity", "agy"):
-        all_outputs[base_dir / "AGENTS.md"] = compile_agents_md(config, project, guardrails_block, base_dir, agents_scope)
+        all_outputs[base_dir / "AGENTS.md"] = compile_agents_md(config, project, guardrails_block, base_dir)
     if provider in ("all", "codex"):
         all_outputs.update(compile_codex(config, project, guardrails_block, base_dir, agents_dir))
     if provider in ("all", "claude"):

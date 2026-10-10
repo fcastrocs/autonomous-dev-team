@@ -19,8 +19,13 @@ description = "Multi-provider autonomous agent protocol and configuration engine
 forbidden_paths = [
   ".git/**",
   "__pycache__/**",
+  "dist/**",
+  "build/**",
+  ".venv/**",
+  ".pytest_cache/**",
   ".codex/**",
-  ".pytest_cache/**"
+  ".claude/**",
+  ".agents/**"
 ]
 
 # Command to deterministically synchronize/build generated assets (replaces LLM asset editing).

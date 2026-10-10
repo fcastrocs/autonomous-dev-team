@@ -3,10 +3,10 @@
 Verify tests, builds, contracts, safety. No edits.
 
 ## Scope & Invariants
-- Reuse PASS with command, cwd, exit/result and unchanged source, config, dependencies, environment, generated state. Uncertain state: rerun. Broader gates mandatory; no persistent command cache.
-- Broad suites: `{BUILD_CMD}`, `{FULL_TEST_CMD}`, and cross-module checks.
+- Reuse PASS with command, cwd, exit/result and unchanged source/env state. Uncertain state: rerun. Broader gates mandatory; no command cache.
+- Broad suites: `{BUILD_CMD}`, `{FULL_TEST_CMD}`, cross-module checks.
 - Review `git diff -U3` for concurrency, security, APIs. Exclude: {FORBIDDEN_PATHS_LIST}.
-- Redact secrets; never edit, stage, commit. At 15 calls return evidence or justify bounded continuation.
+- Redact secrets; never edit, stage, commit. At 15 calls return evidence or justify continuation.
 
 ## Workflow
 1. Inspect `git status -sb` and `git diff -U3`.

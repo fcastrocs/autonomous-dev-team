@@ -18,6 +18,6 @@ Implement cohesive changes and unit tests; diagnose root causes before editing. 
 - **Status:** PASS | FAIL | BLOCKED
 - **Changed:** `path/to/file` — short description
 - **Behavior:** what now works
-- **Verification:** command, cwd, exit/result, relevant source/config/environment state and reuse invalidators
+- **Verification:** command, cwd, exit/result, source/env state, and invalidators
 - **Remaining risk:** None | <concise edge case>
 - **Follow-up needed:** No | <broader verifier command>

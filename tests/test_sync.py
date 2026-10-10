@@ -76,6 +76,20 @@ class TestSyncCompiler(unittest.TestCase):
         claude_orch = outputs.get(BASE_DIR / ".claude" / "agents" / "orchestrator.md", "")
         self.assertIn("## Claude Model Routing", claude_orch)
 
+    def test_effective_forbidden_paths_includes_provider_outputs(self):
+        project = {"forbidden_paths": [".git/**", "__pycache__/**"]}
+        effective = sync.get_effective_forbidden_paths(project)
+        self.assertIn(".codex/**", effective)
+        self.assertIn(".claude/**", effective)
+        self.assertIn(".agents/**", effective)
+        self.assertIn(".git/**", effective)
+        self.assertIn("__pycache__/**", effective)
+
+        guardrails = sync.build_project_guardrails(project)
+        self.assertIn("`.codex/**`", guardrails)
+        self.assertIn("`.claude/**`", guardrails)
+        self.assertIn("`.agents/**`", guardrails)
+
     def test_provider_filter(self):
         codex_only = sync.generate_all_outputs(BASE_DIR, "codex")
         for fpath in codex_only.keys():
@@ -985,13 +999,15 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertEqual(sync.output_provider("CLAUDE.md"), "claude")
         self.assertEqual(sync.output_provider(".claude/agents/implementer.md"), "claude")
         self.assertEqual(sync.output_provider(".agents/agents/implementer/agent.md"), "antigravity")
+        self.assertEqual(sync.output_provider(".agents/skills/security-review/SKILL.md"), "antigravity")
+        self.assertEqual(sync.output_provider(".agents/skills/tdd-workflow/SKILL.md"), "antigravity")
         self.assertEqual(sync.output_provider(".codex/config.toml"), "codex")
 
         config = sync.load_config(sync.resolve_config_path(BASE_DIR))
         project = config.get("project", {})
         guardrails = sync.build_project_guardrails(project)
 
-        slim_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "all")
+        slim_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR)
         self.assertIn("# autonomous-dev-team", slim_md)
         self.assertIn("## Repository Guardrails & Commands", slim_md)
         self.assertNotIn("## Claude Subagent Guidance", slim_md)
@@ -1001,6 +1017,28 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotIn("Highest-priority `/team` fast path", slim_md)
         self.assertLessEqual(len(slim_md), 1600)
         self.assertLessEqual(sync.estimate_tokens(len(slim_md)), 400)
+
+    def test_orchestrator_uses_provider_native_role_path(self):
+        """Ensure orchestrator protocol text references the correct provider-native agent path."""
+        config = sync.load_config(sync.resolve_config_path(BASE_DIR))
+        project = dict(config.get("project", {}))
+        project["forbidden_paths"] = sync.get_effective_forbidden_paths(project)
+        guardrails = sync.build_project_guardrails(project)
+
+        claude_proto = sync.compile_orchestrator_protocol(BASE_DIR, project, guardrails, provider="claude")
+        self.assertIn(".claude/agents/", claude_proto)
+        self.assertNotIn(".agents/agents/", claude_proto)
+        self.assertNotIn(".codex/agents/", claude_proto)
+
+        codex_proto = sync.compile_orchestrator_protocol(BASE_DIR, project, guardrails, provider="codex")
+        self.assertIn(".codex/agents/", codex_proto)
+        self.assertNotIn(".agents/agents/", codex_proto)
+        self.assertNotIn(".claude/agents/", codex_proto)
+
+        agy_proto = sync.compile_orchestrator_protocol(BASE_DIR, project, guardrails, provider="antigravity")
+        self.assertIn(".agents/agents/", agy_proto)
+        self.assertNotIn(".claude/agents/", agy_proto)
+        self.assertNotIn(".codex/agents/", agy_proto)
 
     def test_estimate_tokens(self):
         self.assertEqual(sync.estimate_tokens(0), 0)

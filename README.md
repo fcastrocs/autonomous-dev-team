@@ -108,7 +108,7 @@ Depending on the selected provider, the compiler generates:
 |---|---|
 | **Codex** | `.codex/config.toml`, `.codex/agents/*.toml`, `.agents/skills/*`, `.codex/prompts/*.md` |
 | **Claude Code** | `AGENTS.md`, `.claude/agents/*.md`, `.claude/skills/*` |
-| **Google Antigravity** | `AGENTS.md`, `.agents/skills/*` |
+| **Google Antigravity** | `AGENTS.md`, `.agents/agents/*.md`, `.agents/skills/*`, `.agents/hooks.json` |
 
 The compiler also tracks managed files in `.autonomous-dev-team/manifest.json` for clean pruning and synchronization. `.autonomous-dev-team/config.toml` is the sole source of truth. Internal role instructions in `.autonomous-dev-team/_internal/agents/` and generated provider files should never be edited by hand.
 
