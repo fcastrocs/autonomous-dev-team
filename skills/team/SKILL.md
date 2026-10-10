@@ -1,6 +1,7 @@
 ---
 name: team
 description: Inspect provider and roster status by running sync.py --team directly; never forward --team to a build or package command.
+disable-model-invocation: true
 ---
 
 # Dev Team Status

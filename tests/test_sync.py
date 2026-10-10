@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import functools
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -23,6 +24,9 @@ from unittest import mock
 import sync
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Tests must never inherit the caller's stdin: run_verify reads stdin when it is not a TTY and blocks otherwise.
+_run = functools.partial(subprocess.run, stdin=subprocess.DEVNULL)
 
 class TestSyncCompiler(unittest.TestCase):
 
@@ -57,7 +61,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn(aname, output_names, f"Missing Codex agent: {aname}")
 
         self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 3)
-        self.assertEqual(len([k for k in outputs if ".agents/agents" in str(k) and k.name == "agent.md"]), 3)
+        self.assertEqual(len([k for k in outputs if ".agents/agents" in str(k) and k.name == "agent.md" and k.parent.name != "orchestrator"]), 3)
             
         # Verify no unreplaced placeholders remain in any output
         placeholder_pattern = re.compile(r'\{[A-Z0-9_]+\}')
@@ -219,29 +223,29 @@ class TestSyncCompiler(unittest.TestCase):
             client_dir = target / ".autonomous-dev-team"
             unrelated = target / "config.toml"
             command = [sys.executable, str(BASE_DIR / "install.py"), "--provider", "codex", str(target)]
-            subprocess.run(command, check=True, capture_output=True, text=True)
+            _run(command, check=True, capture_output=True, text=True)
             first_config = (client_dir / "config.toml").read_text(encoding="utf-8")
             self.assertIn('active_provider = "codex"', first_config)
             unrelated.write_text('[tool.example]\nvalue = true\n', encoding="utf-8")
             installed_sync = client_dir / "sync.py"
             installed_sync.write_text("user-managed content\n", encoding="utf-8")
-            refused = subprocess.run(command, capture_output=True, text=True)
+            refused = _run(command, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn("use --force to replace it", refused.stderr)
             self.assertEqual(installed_sync.read_text(encoding="utf-8"), "user-managed content\n")
             forced_command = command[:-1] + ["--force", command[-1]]
-            subprocess.run(forced_command, check=True, capture_output=True, text=True)
+            _run(forced_command, check=True, capture_output=True, text=True)
             self.assertEqual(installed_sync.read_text(encoding="utf-8"), (BASE_DIR / "sync.py").read_text(encoding="utf-8"))
             installed_sync.unlink()
             shutil.rmtree(client_dir / "_internal" / "agents")
             (client_dir / "_internal" / "agents").mkdir(parents=True, exist_ok=True)
             installed_agent = client_dir / "_internal" / "agents" / "implementer.md"
             installed_agent.write_text("local agent changes\n", encoding="utf-8")
-            refused = subprocess.run(command, capture_output=True, text=True)
+            refused = _run(command, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn(str(installed_agent), refused.stderr)
             self.assertEqual(installed_agent.read_text(encoding="utf-8"), "local agent changes\n")
-            subprocess.run(forced_command, check=True, capture_output=True, text=True)
+            _run(forced_command, check=True, capture_output=True, text=True)
             self.assertEqual((client_dir / "config.toml").read_text(encoding="utf-8"), first_config)
             self.assertEqual(unrelated.read_text(encoding="utf-8"), '[tool.example]\nvalue = true\n')
             self.assertTrue((client_dir / "_internal" / "agents" / "orchestrator.md").is_file())
@@ -261,11 +265,11 @@ class TestSyncCompiler(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = Path(tmpdir) / "install.py"
             shutil.copy(BASE_DIR / "install.py", runner)
-            result = subprocess.run([sys.executable, str(runner), str(Path(tmpdir) / "target")], capture_output=True, text=True)
+            result = _run([sys.executable, str(runner), str(Path(tmpdir) / "target")], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("remote installation requires --version", result.stderr)
 
-            result = subprocess.run(
+            result = _run(
                 [sys.executable, str(runner), "--version", "v1", "--archive-url",
                  "https://example.invalid/v1.tar.gz", "--sha256", "bad", str(Path(tmpdir) / "target")],
                 capture_output=True, text=True)
@@ -286,7 +290,7 @@ class TestSyncCompiler(unittest.TestCase):
                     "--force", str(target),
                 ]
 
-                result = subprocess.run(command, capture_output=True, text=True)
+                result = _run(command, capture_output=True, text=True)
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("must not be a symlink", result.stderr)
@@ -307,7 +311,7 @@ class TestSyncCompiler(unittest.TestCase):
                 fifo.type = tarfile.FIFOTYPE
                 bundle.addfile(fifo)
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-            result = subprocess.run(
+            result = _run(
                 [sys.executable, str(runner), "--version", "v1", "--archive-url",
                  archive.as_uri(), "--sha256", checksum,
                  str(tmppath / "target")],
@@ -329,7 +333,7 @@ class TestSyncCompiler(unittest.TestCase):
             shutil.copy(BASE_DIR / "install.py", runner)
             archive = tmppath / "release-v1.tar.gz"
             archive.write_bytes(b"invalid-archive-content")
-            result = subprocess.run(
+            result = _run(
                 [sys.executable, str(runner), "--version", "v1", "--archive-url",
                  archive.as_uri(), "--sha256", "0" * 64,
                  str(tmppath / "target")],
@@ -341,7 +345,7 @@ class TestSyncCompiler(unittest.TestCase):
         installer = (BASE_DIR / "install.py").read_text(encoding="utf-8")
         self.assertIn("sys.version_info < (3, 11)", installer)
         code = "import sys; sys.version_info = (3, 10, 0); " + installer.split("import sys\n", 1)[1]
-        result = subprocess.run(
+        result = _run(
             [sys.executable, "-c", code],
             capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
@@ -351,7 +355,7 @@ class TestSyncCompiler(unittest.TestCase):
         sync_code = (BASE_DIR / "sync.py").read_text(encoding="utf-8")
         self.assertIn("sys.version_info < (3, 11)", sync_code)
         code = "import sys, os, shutil; sys.version_info = (3, 10, 0); " + sync_code.split("import sys\n", 1)[1]
-        result = subprocess.run(
+        result = _run(
             [sys.executable, "-c", code],
             capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
@@ -372,7 +376,7 @@ class TestSyncCompiler(unittest.TestCase):
                     bundle.add(BASE_DIR / "skills", arcname=f"{prefix}/skills")
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
             target = tmppath / "target"
-            result = subprocess.run(
+            result = _run(
                 [sys.executable, str(runner), "--version", "v1.0.0", "--archive-url",
                  archive.as_uri(), "--sha256", checksum, "--provider", "all",
                  str(target)],
@@ -466,17 +470,12 @@ class TestSyncCompiler(unittest.TestCase):
             outputs[BASE_DIR / ".claude" / "agents" / "orchestrator.md"],
         )
         for content in adapters:
-            self.assertIn("Highest-priority `/team` fast path", content)
-            self.assertIn("treat `--team` exclusively as a direct `sync.py` argument", content)
-            self.assertIn("`npm run build --team` is invalid", content)
-            self.assertIn("without a fallback command", content)
             self.assertIn("touches ≤3 files, modifies ≤150 lines", content)
             self.assertIn("never remove a required correctness gate", content)
             self.assertIn("permit multiple gates for genuinely distinct risks", content)
             self.assertIn("After 8 direct tool calls", content)
             self.assertIn("after 12, replan or explain", content)
             self.assertIn("Never report success while required verification is failing or incomplete", content)
-        self.assertNotIn("Highest-priority `/team` fast path", outputs[BASE_DIR / "AGENTS.md"])
         self.assertNotIn("Adaptive routing", outputs[BASE_DIR / "AGENTS.md"])
 
         implementer_prompt = (BASE_DIR / "agents" / "implementer.md").read_text(encoding="utf-8")
@@ -577,9 +576,8 @@ class TestSyncCompiler(unittest.TestCase):
     def test_skill_generation(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         skill_names = {
-            "team", "agent-introspection-debugging", "documentation-lookup",
-            "verification-loop", "agent-sort", "eval-harness", "tdd-workflow",
-            "security-review", "coding-standards",
+            "team", "documentation-lookup", "eval-harness", "tdd-workflow",
+            "security-review",
         }
 
         for skill_name in skill_names:
@@ -617,23 +615,12 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIn('Never use "Specialist"', content)
             self.assertIn("Do NOT summarize, abbreviate, or omit roles from the roster", content)
 
-        agent_sort_paths = (
-            BASE_DIR / ".agents" / "skills" / "agent-sort" / "SKILL.md",
-            BASE_DIR / ".claude" / "skills" / "agent-sort" / "SKILL.md",
-            BASE_DIR / ".codex" / "prompts" / "agent-sort.md",
-        )
-        for spath in agent_sort_paths:
-            content = outputs[spath]
-            self.assertIn("first-pass correctness before token minimization", content)
-            self.assertIn("checkpoints govern work performed, not provider billing", content)
-            self.assertIn("separate gates for distinct risks", content)
-
         self.assertFalse(any(path.name == "openai.yaml" for path in outputs))
         self.assertFalse(any(path.name == "openai.yaml" for path in (BASE_DIR / "skills").rglob("*")))
 
     def test_codex_scope_generates_implicit_and_explicit_skills(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "codex")
-        for skill_name in ("team", "verification-loop", "security-review"):
+        for skill_name in ("team", "documentation-lookup", "security-review"):
             self.assertIn(BASE_DIR / ".agents" / "skills" / skill_name / "SKILL.md", outputs)
             self.assertIn(BASE_DIR / ".codex" / "prompts" / f"{skill_name}.md", outputs)
         self.assertFalse(any(path.parts[-3:-1] == (".claude", "skills") for path in outputs))
@@ -710,7 +697,7 @@ class TestSyncCompiler(unittest.TestCase):
         
         # Ensure each phony target has a defined rule
         for target in phony_targets:
-            res = subprocess.run(
+            res = _run(
                 ["make", "-n", target],
                 cwd=str(BASE_DIR),
                 capture_output=True,
@@ -771,7 +758,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
 
             # Test invocation of sync.py from inside .autonomous-dev-team
-            res = subprocess.run(
+            res = _run(
                 [sys.executable, str(client_dir / "sync.py"), "--check", "--provider", "all"],
                 cwd=str(tmppath),
                 capture_output=True,
@@ -808,7 +795,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertTrue((tmppath / ".codex" / "config.toml").exists())
             self.assertEqual(sync.run_check(tmppath, "all"), 0)
 
-            res = subprocess.run(
+            res = _run(
                 [sys.executable, str(client_dir / "sync.py"), "--check", "--provider", "all"],
                 cwd=str(tmppath),
                 capture_output=True,
@@ -975,6 +962,52 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotIn(".claude/agents/", agy_proto)
         self.assertNotIn(".codex/agents/", agy_proto)
 
+        # Skills are injected by /root, so the protocol must name the injectable skills and no placeholder may leak.
+        for proto in (claude_proto, codex_proto, agy_proto):
+            self.assertIn("### Skill injection", proto)
+            self.assertIn("`tdd-workflow`", proto)
+            self.assertNotIn("{SKILLS_DIR}", proto)
+
+    def test_claude_preloads_configured_skills_only(self):
+        outputs = sync.generate_all_outputs(BASE_DIR, "claude")
+        expected = {
+            "implementer": "skills:\n  - tdd-workflow\n",
+            "verifier": "skills:\n  - security-review\n",
+        }
+        for role, block in expected.items():
+            frontmatter = outputs[BASE_DIR / ".claude" / "agents" / f"{role}.md"].split("---\n", 2)[1]
+            self.assertIn(block, frontmatter, role)
+        architect = outputs[BASE_DIR / ".claude" / "agents" / "architect.md"].split("---\n", 2)[1]
+        self.assertNotIn("skills:", architect)
+
+    def test_missing_preloaded_skill_fails_claude_compile(self):
+        cfg = sync.load_config(sync.resolve_config_path(BASE_DIR))
+        cfg["agents"]["implementer"]["skills"] = ["no-such-skill"]
+        project = dict(cfg.get("project", {}))
+        project["forbidden_paths"] = sync.get_effective_forbidden_paths(project)
+        with self.assertRaisesRegex(ValueError, "no-such-skill"):
+            sync.compile_claude(cfg, project, "", BASE_DIR, BASE_DIR / "agents")
+
+    def test_agents_md_points_root_session_to_orchestrator_protocol(self):
+        # Claude Code reads AGENTS.md (when no CLAUDE.md exists) but never the subagent file, so the pointer must name it.
+        outputs = sync.generate_all_outputs(BASE_DIR, "all")
+        agents_md = outputs[BASE_DIR / "AGENTS.md"]
+        self.assertIn("`.claude/agents/orchestrator.md`", agents_md)
+        self.assertIn("`.agents/agents/orchestrator/agent.md`", agents_md)
+        self.assertIn("`.codex/config.toml`", agents_md)
+        self.assertIn("Small, known fixes stay direct.", agents_md)
+        antigravity = outputs[BASE_DIR / ".agents" / "agents" / "orchestrator" / "agent.md"]
+        self.assertIn("Operating loop", antigravity)
+        self.assertNotIn("Adaptive routing", agents_md)
+        self.assertNotIn("Adaptive routing", agents_md)
+
+    def test_routing_defaults_to_lowest_tier(self):
+        # Guards the cost rule: delegation must be justified, and one-line bugfixes stay direct.
+        protocol = (BASE_DIR / "agents" / "orchestrator.md").read_text(encoding="utf-8")
+        self.assertIn("Default to the lowest tier the rules allow.", protocol)
+        self.assertIn("including a one-line bugfix", protocol)
+        self.assertIn("A Tier 1 task never starts with `architect`.", protocol)
+
     def test_estimate_tokens(self):
         self.assertEqual(sync.estimate_tokens(0), 0)
         self.assertEqual(sync.estimate_tokens(4), 1)
@@ -1013,7 +1046,7 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertIsInstance(tree["characters"], int)
             self.assertGreater(tree["characters"], 0)
             self.assertEqual(tree["tokens"], sync.estimate_tokens(tree["characters"]))
-            expected_files = 13 if prov == "codex" else 14
+            expected_files = 9 if prov == "codex" else (11 if prov == "antigravity" else 10)  # antigravity also ships the root protocol file
             self.assertEqual(tree["files_count"], expected_files)
 
             subagents = p_data["subagents"]
@@ -1035,7 +1068,7 @@ class TestSyncCompiler(unittest.TestCase):
 
     def test_stats_cli(self):
         # 1. Test full stats CLI output
-        res = subprocess.run(
+        res = _run(
             [sys.executable, str(BASE_DIR / "sync.py"), "--stats"],
             cwd=str(BASE_DIR),
             capture_output=True,
@@ -1055,7 +1088,7 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertIn("verifier", res.stdout)
 
         # 2. Test scoped stats CLI output (--provider claude)
-        res_claude = subprocess.run(
+        res_claude = _run(
             [sys.executable, str(BASE_DIR / "sync.py"), "--stats", "--provider", "claude"],
             cwd=str(BASE_DIR),
             capture_output=True,
@@ -1323,7 +1356,7 @@ build_cmd = "python3 -c \\"import sys; sys.exit(0)\\""
                 self.assertEqual(payload, {"decision": "allow"})
 
             # CLI subprocess with --run-verify
-            res = subprocess.run(
+            res = _run(
                 [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--dir", str(tmppath)],
                 capture_output=True,
                 text=True,
@@ -1331,7 +1364,7 @@ build_cmd = "python3 -c \\"import sys; sys.exit(0)\\""
             self.assertEqual(res.returncode, 0)
 
             # CLI subprocess with --run-verify --hook
-            res_hook = subprocess.run(
+            res_hook = _run(
                 [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--hook", "--dir", str(tmppath)],
                 capture_output=True,
                 text=True,
@@ -1362,7 +1395,7 @@ build_cmd = "python3 -c \\"import sys; sys.exit(1)\\""
                 self.assertIn("reason", payload)
 
             # CLI subprocess failure
-            res_fail = subprocess.run(
+            res_fail = _run(
                 [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--dir", str(tmppath)],
                 capture_output=True,
                 text=True,
@@ -1370,7 +1403,7 @@ build_cmd = "python3 -c \\"import sys; sys.exit(1)\\""
             self.assertEqual(res_fail.returncode, 1)
 
             # CLI subprocess failure in hook mode
-            res_fail_hook = subprocess.run(
+            res_fail_hook = _run(
                 [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--hook", "--dir", str(tmppath)],
                 capture_output=True,
                 text=True,
@@ -1435,7 +1468,7 @@ build_cmd = "python3 -c \\"import sys; sys.exit(1)\\""
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         codex_subagents = [p.name for p in outputs.keys() if ".codex/agents" in str(p)]
         claude_subagents = [p.name for p in outputs.keys() if ".claude/agents" in str(p) and p.name != "orchestrator.md"]
-        agy_subagents = [p.parent.name for p in outputs.keys() if ".agents/agents" in str(p) and p.name == "agent.md"]
+        agy_subagents = [p.parent.name for p in outputs.keys() if ".agents/agents" in str(p) and p.name == "agent.md" and p.parent.name != "orchestrator"]
 
         expected_roles = {"architect", "implementer", "verifier"}
         self.assertEqual(set(s.replace(".toml", "") for s in codex_subagents), expected_roles)

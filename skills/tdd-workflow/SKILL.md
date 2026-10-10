@@ -11,6 +11,6 @@ Use this skill when a requested behavior or reproduced defect has a stable autom
 2. Add or adjust one focused test and confirm it fails for the intended reason.
 3. Implement the minimum cohesive change that makes the test pass.
 4. Refactor only after green, preserving the same behavioral assertion.
-5. Run the configured focused verification and hand broader risk to the validator when required.
+5. Run the focused command from the dispatch's Verification field, and hand broader risk to the verifier when required.
 
 Do not force TDD onto documentation-only, mechanical configuration, generated output, or behavior that cannot be tested reliably. Never weaken an assertion merely to obtain green.

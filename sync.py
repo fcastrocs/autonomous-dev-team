@@ -593,6 +593,7 @@ def compile_claude(config: dict, project: dict, guardrails_block: str,
                    base_dir: Path, agents_dir: Path) -> dict:
     """Compiles Claude Code configuration into .claude/agents/*.md. Returns map of file paths to contents."""
     agents = provider_agents(config, "claude")
+    skills_dir = resolve_skills_dir(base_dir)
     outputs = {}
 
     for agent_path in sorted(agents_dir.glob("*.md")):
@@ -607,8 +608,14 @@ def compile_claude(config: dict, project: dict, guardrails_block: str,
             f"{role} agent for {config['project']['name']} "
             f"(reasoning effort: {effort}; {effort_delivery(config, 'claude')})."
         )
+        # Preloaded skills are injected by Claude at spawn; a missing name is silently skipped by the platform, so fail here.
+        preload = list(agents[role].get("skills", []))
+        for skill in preload:
+            if not (skills_dir / skill / "SKILL.md").is_file():
+                raise ValueError(f"Claude agent '{role}' preloads missing skill '{skill}' (expected {skills_dir / skill / 'SKILL.md'}).")
+        skills_block = "skills:\n" + "".join(f"  - {skill}\n" for skill in preload) if preload else ""
         outputs[base_dir / f".claude/agents/{role}.md"] = (
-            f"---\nname: {role}\ndescription: {description}\nmodel: {model}\n---\n\n"
+            f"---\nname: {role}\ndescription: {description}\nmodel: {model}\n{skills_block}---\n\n"
             f"{AUTO_GEN_HEADER_MD}\n"
             + interpolate_prompt(
                 agent_path.read_text(encoding="utf-8"), project, ""
@@ -702,6 +709,10 @@ model: {model}
 """
         outputs[base_dir / ".agents" / "agents" / role / "agent.md"] = agent_content
 
+    # Root protocol file, read on demand by the root session (Antigravity has no native orchestrator context).
+    protocol = compile_orchestrator_protocol(base_dir, project, guardrails_block, provider="antigravity")
+    outputs[base_dir / ".agents" / "agents" / "orchestrator" / "agent.md"] = f"{AUTO_GEN_HEADER_MD}\n{protocol}\n"
+
     return outputs
 
 
@@ -736,6 +747,12 @@ def compile_agents_md(config: dict, project: dict, guardrails_block: str,
     if desc:
         sections.append(desc)
     sections.append(f"## Repository Guardrails & Commands\n\n{guardrails_block}")
+    # Pointer only: the full protocol is loaded on demand, not on every session.
+    sections.append(
+        "## Orchestration\n\nBefore delegating or planning multi-step work, follow the root orchestrator protocol "
+        "installed for this provider (`.claude/agents/orchestrator.md` on Claude Code, `.agents/agents/orchestrator/agent.md` "
+        "on Antigravity; Codex already has it in `.codex/config.toml`). Small, known fixes stay direct."
+    )
     return "\n\n".join(sections).strip() + "\n"
 
 

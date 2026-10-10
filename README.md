@@ -121,11 +121,11 @@ The root agent selects the smallest safe workflow tier for each task:
 - **Tier 2 (Feature / Bugfix)**: `implementer` -> `verifier` (cohesive feature or bugfix; root cause diagnosis folded into `implementer`).
 - **Tier 3 (Architecture / Overhaul)**: `architect` -> `implementer` -> `verifier` (multi-subsystem or architectural overhaul).
 
-Specialized evaluation and safety guidance is preserved in `skills/` (such as `skills/security-review`, `skills/verification-loop`, and `skills/eval-harness`) and standalone tools in `scripts/`. They guide the active agent without requiring separate prompt roles.
+Specialized evaluation and safety guidance is preserved in `skills/` (such as `skills/security-review` and `skills/eval-harness`) and standalone tools in `scripts/`. They guide the active agent without requiring separate prompt roles.
 
 ### Coding Skills
 
-The canonical skills are `team`, `agent-introspection-debugging`, `documentation-lookup`, `verification-loop`, `agent-sort`, `eval-harness`, `tdd-workflow`, `security-review`, and `coding-standards`. Providers may select a skill implicitly when its description matches the task; selection is contextual, so skills do not run on every request. Explicit invocation remains available, including Codex prompt aliases. Skills guide the active agent and never authorize delegation or broader access on their own.
+The canonical skills are `team`, `documentation-lookup`, `eval-harness`, `tdd-workflow`, and `security-review`. Providers may select a skill implicitly when its description matches the task; selection is contextual, so skills do not run on every request. Explicit invocation remains available, including Codex prompt aliases. Skills guide the active agent and never authorize delegation or broader access on their own.
 
 Correctness comes before raw token minimization. The governor prefers the cheapest workflow that still provides adequate implementation and verification evidence, avoids duplicate reviewers covering the same risk, and permits multiple gates for distinct high-risk concerns. It preserves one retry for a plausibly transient delegation failure and allows the original implementer at most two evidence-backed repair cycles; every repair across agents and reasoning steps also counts toward the configured total repair limit. At 8 direct tool calls the agent reassesses its approach; at 12 it replans or explains why more work is needed. These checkpoints govern work performed, not provider billing, and they never override required correctness gates or permit success claims while verification is failing or incomplete.
 

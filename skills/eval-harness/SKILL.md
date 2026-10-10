@@ -1,6 +1,7 @@
 ---
 name: eval-harness
 description: Design focused evaluations for agent prompts, routing, protocol, or harness changes using repeatable scenarios and measurable pass criteria.
+disable-model-invocation: true
 ---
 
 # Evaluation Harness

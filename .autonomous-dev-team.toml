@@ -81,9 +81,11 @@ description = "Read-only architect combining targeted fact discovery with 1–3 
 tier = "balanced"
 reasoning_effort = "medium"
 [agents.implementer]
-description = "Primary implementer for surgical changes and cohesive features; verifies unit tests to green."
+description = "Implements cohesive changes and focused unit tests; green before handoff."
 tier = "balanced"
 reasoning_effort = "medium"
+# Claude preloads these skills into the subagent at spawn (full SKILL.md). Codex and Antigravity get injection by /root instead.
+skills = ["tdd-workflow"]
 # Adaptive escalation: start on `tier`, step up only when a substantive blocker remains
 # after targeted investigation; `ultra` only when the harder model is justified.
 escalation = ["deep", "ultra"]
@@ -95,6 +97,7 @@ adaptive_steps = [
 ]
 
 [agents.verifier]
-description = "Independent verifier for full test suites, builds, regression risks, semantic contracts, and safety checks."
+description = "Independent verifier: test suites, builds, contracts, regressions, safety."
 tier = "balanced"
 reasoning_effort = "medium"
+skills = ["security-review"]
