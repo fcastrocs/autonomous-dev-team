@@ -4,11 +4,8 @@
 # Edit this file, then run `./sync.py` to regenerate provider-specific configs.
 # ==============================================================================
 
+schema_version = 2
 active_provider = "all"  # "all" | "codex" | "claude" | "antigravity"
-
-[schema]
-name = "autonomous-dev-team"
-version = 1
 
 # ==============================================================================
 # PROJECT INVARIANTS (Compiled into agent instructions to prevent hallucinations)
@@ -33,209 +30,79 @@ build_sync_cmd = "python3 sync.py"
 # Agents interpolate {file} or {test_name} for narrow verification before handoff.
 focused_test_cmd = "python3 -m unittest tests/test_sync.py"
 
-# Broad verification suite command executed ONLY by code-validator when new risk is introduced.
+# Broad verification suite command executed ONLY by verifier when new risk is introduced.
 full_test_cmd = "python3 -m unittest discover tests"
 
-# Build / compilation verification command (owned by code-validator).
+# Build / compilation verification command (owned by verifier).
 build_cmd = "python3 sync.py --check"
 
+# ==============================================================================
+# DETERMINISTIC VERIFICATION GATES
+# Commands executed by sync.py --run-verify and Antigravity Stop hooks.
+# ==============================================================================
+[verify]
+commands = [
+  "python3 sync.py --check",
+  "python3 -m unittest discover tests"
+]
 
 # ==============================================================================
-# OPENAI / CODEX CONFIGURATION
-# Generates .codex/config.toml, .codex/agents/*.toml, and .codex/prompts/*.md
+# MODEL ALIASES
+# Maps speed/capability tiers to provider-specific model IDs.
 # ==============================================================================
-[codex.orchestrator]
-model = "gpt-6.1-sol"
+[models]
+fast = { codex = "gpt-6-luna", claude = "claude-haiku-5-5", antigravity = "gemini-3.8-flash" }
+balanced = { codex = "gpt-5.6-terra", claude = "claude-haiku-5-5", antigravity = "gemini-3.8-flash" }
+deep = { codex = "gpt-6.1-sol", claude = "claude-sonnet-5-5", antigravity = "gemini-3.8-flash" }
+ultra = { codex = "gpt-6-astra", claude = "claude-opus-5-5", antigravity = "gemini-3.8-flash" }
+
+[reasoning_policy]
+efforts = ["low", "medium", "high"]
+max_repairs = 3
+
+[reasoning_policy.providers.codex]
+effort_delivery = "native"
+
+[reasoning_policy.providers.claude]
+effort_delivery = "advisory"
+
+[reasoning_policy.providers.antigravity]
+effort_delivery = "unsupported"
+
+# ==============================================================================
+# ROOT ORCHESTRATOR CONFIGURATION
+# ==============================================================================
+[orchestrator]
+tier = "balanced"
 reasoning_effort = "low"
 plan_mode_reasoning_effort = "medium"
 tool_output_token_limit = 6000
 model_auto_compact_token_limit = 45000
 model_auto_compact_token_limit_scope = "body_after_prefix"
 
-[codex.agents.code-explorer]
-description = "Read-only repository scout for targeted discovery, producing structured Discovery Manifests."
-model = "gpt-6-luna"
-reasoning_effort = "low"
-
-[codex.agents.planner]
-description = "Repository-grounded engineering planner used ONLY for Tier 3 complex, architectural, or multi-subsystem changes."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.quick-implementer]
-description = "Low-cost surgical implementer for small, mechanical, single-file, low-risk edits."
-model = "gpt-6-luna"
-reasoning_effort = "low"
-
-[codex.agents.implementer]
-description = "Primary implementer for substantive features, owning complete behavioral seams and verifying unit tests to green."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.diagnostician]
-description = "Evidence-driven bug diagnostician that reproduces failures and returns a bounded root-cause manifest without editing files."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.code-validator]
-description = "Independent verification runner for broad builds, integration suites, and cross-module checks. Validates new risk."
-model = "gpt-6-luna"
-reasoning_effort = "low"
-
-[codex.agents.code-reviewer]
-description = "Independent senior reviewer for high-risk diffs (lifecycle, concurrency, native bridges, public contracts, security)."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.commit-pusher]
-description = "Deterministic Git publishing agent used only after an explicit user request. Non-interactive path staging."
-model = "gpt-6-luna"
-reasoning_effort = "low"
-
-[codex.agents.harness-optimizer]
-description = "Read-only evaluator of agent harnesses, prompts, routing, and context efficiency with evidence-backed recommendations."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.agent-evaluator]
-description = "Independent evaluator of agent outputs against dispatch contracts, evidence, and completion quality."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.security-reviewer]
-description = "Focused read-only security reviewer for trust boundaries, credentials, authorization, and unsafe data flows."
-model = "gpt-6.1-sol"
-reasoning_effort = "high"
-
-[codex.agents.pr-test-analyzer]
-description = "Read-only reviewer mapping changed behavior to meaningful tests and assessing assertions, edge paths, and flakiness risk."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-[codex.agents.silent-failure-hunter]
-description = "Read-only specialist for swallowed errors, false-success paths, missing propagation, and observability gaps."
-model = "gpt-6.1-sol"
-reasoning_effort = "medium"
-
-
 # ==============================================================================
-# ANTHROPIC / CLAUDE CODE CONFIGURATION
-# Generates AGENTS.md, .claude/agents/*.md, and .claude/skills/*
+# SUBAGENTS ROSTER
+# Single DRY definition of all active subagents across providers.
 # ==============================================================================
-[claude.orchestrator]
-model = "claude-3-7-sonnet"
-thinking = "low"
+[agents.architect]
+description = "Read-only architect combining targeted fact discovery with 1–3 slice contract planning."
+tier = "balanced"
+reasoning_effort = "medium"
+[agents.implementer]
+description = "Primary implementer for surgical changes and cohesive features; verifies unit tests to green."
+tier = "balanced"
+reasoning_effort = "medium"
+# Adaptive escalation: start on `tier`, step up only when a substantive blocker remains
+# after targeted investigation; `ultra` only when the harder model is justified.
+escalation = ["deep", "ultra"]
+adaptive_steps = [
+  { tier = "balanced", effort = "medium" },
+  { tier = "balanced", effort = "high" },
+  { tier = "deep", effort = "medium" },
+  { tier = "ultra", effort = "medium", exceptional = true }
+]
 
-[claude.agents.code-explorer]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.planner]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.quick-implementer]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.implementer]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-[claude.agents.diagnostician]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-[claude.agents.code-validator]
-model = "claude-3-7-sonnet"
-thinking = "low"
-
-[claude.agents.code-reviewer]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.commit-pusher]
-model = "claude-3-5-haiku"
-thinking = "none"
-
-[claude.agents.harness-optimizer]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.agent-evaluator]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-[claude.agents.security-reviewer]
-model = "claude-3-7-sonnet"
-thinking = "high"
-
-[claude.agents.pr-test-analyzer]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-[claude.agents.silent-failure-hunter]
-model = "claude-3-7-sonnet"
-thinking = "medium"
-
-
-# ==============================================================================
-# GOOGLE ANTIGRAVITY (AGY) CONFIGURATION
-# Generates AGENTS.md (with subagent tier enums) and .agents/skills/*
-# Configured for Gemini 3.8 / 3.7 Flash with reasoning for credit savings and accuracy.
-# ==============================================================================
-[antigravity.orchestrator]
-model = "flash"
-reasoning = "medium"
-
-[antigravity.agents.code-explorer]
-model = "flash"
-reasoning = "low"
-
-[antigravity.agents.planner]
-model = "flash"
-reasoning = "high"
-
-[antigravity.agents.quick-implementer]
-model = "flash"
-reasoning = "low"
-
-[antigravity.agents.implementer]
-model = "flash"
-reasoning = "medium"
-
-[antigravity.agents.diagnostician]
-model = "flash"
-reasoning = "medium"
-
-[antigravity.agents.code-validator]
-model = "flash"
-reasoning = "low"
-
-[antigravity.agents.code-reviewer]
-model = "flash"
-reasoning = "high"
-
-[antigravity.agents.commit-pusher]
-model = "flash"
-reasoning = "low"
-
-[antigravity.agents.harness-optimizer]
-model = "flash"
-reasoning = "high"
-
-[antigravity.agents.agent-evaluator]
-model = "flash"
-reasoning = "medium"
-
-[antigravity.agents.security-reviewer]
-model = "flash"
-reasoning = "high"
-
-[antigravity.agents.pr-test-analyzer]
-model = "flash"
-reasoning = "medium"
-
-[antigravity.agents.silent-failure-hunter]
-model = "flash"
-reasoning = "medium"
+[agents.verifier]
+description = "Independent verifier for full test suites, builds, regression risks, semantic contracts, and safety checks."
+tier = "balanced"
+reasoning_effort = "medium"

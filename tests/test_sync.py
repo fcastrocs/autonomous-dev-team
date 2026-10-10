@@ -34,11 +34,11 @@ class TestSyncCompiler(unittest.TestCase):
     def test_load_config(self):
         config_path = BASE_DIR / sync.CONFIG_NAME
         cfg = sync.load_config(config_path)
+        self.assertEqual(cfg["schema_version"], 2)
         self.assertIn("project", cfg)
         self.assertEqual(cfg["project"]["name"], "autonomous-dev-team")
-        self.assertIn("codex", cfg)
-        self.assertIn("claude", cfg)
-        self.assertIn("antigravity", cfg)
+        self.assertIn("models", cfg)
+        self.assertIn("agents", cfg)
 
     def test_generate_all_outputs_integrity(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
@@ -51,17 +51,13 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotIn("GEMINI.md", output_names)
         self.assertNotIn("orchestrator.toml", output_names)
         
-        # Verify all thirteen agents generated for codex
-        agent_names = ["code-explorer.toml", "planner.toml", "implementer.toml", 
-                       "quick-implementer.toml", "diagnostician.toml", "code-validator.toml", 
-                       "code-reviewer.toml", "commit-pusher.toml", "harness-optimizer.toml",
-                       "agent-evaluator.toml", "security-reviewer.toml", "pr-test-analyzer.toml",
-                       "silent-failure-hunter.toml"]
+        # Verify all three agents generated for codex
+        agent_names = ["architect.toml", "implementer.toml", "verifier.toml"]
         for aname in agent_names:
             self.assertIn(aname, output_names, f"Missing Codex agent: {aname}")
-            
-        self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 13)
-        self.assertEqual(len([k for k in outputs if ".agents/agents" in str(k) and k.name == "agent.md"]), 13)
+
+        self.assertEqual(len([k for k in outputs if ".codex/agents" in str(k)]), 3)
+        self.assertEqual(len([k for k in outputs if ".agents/agents" in str(k) and k.name == "agent.md"]), 3)
             
         # Verify no unreplaced placeholders remain in any output
         placeholder_pattern = re.compile(r'\{[A-Z0-9_]+\}')
@@ -70,9 +66,15 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertEqual(matches, [], f"Unreplaced placeholders in {fpath.name}: {matches}")
 
         agy_md = outputs.get(BASE_DIR / "AGENTS.md", "")
-        self.assertIn("# Antigravity & Claude Code Delegation Adapter", agy_md)
-        self.assertIn("## Antigravity Dispatch Syntax", agy_md)
-        self.assertIn("## Claude Model Routing", agy_md)
+        self.assertIn("# autonomous-dev-team", agy_md)
+        self.assertIn("## Repository Guardrails & Commands", agy_md)
+        self.assertNotIn("## Antigravity Dispatch Syntax", agy_md)
+        self.assertNotIn("## Claude Model Routing", agy_md)
+        self.assertLessEqual(len(agy_md), 1600)
+        self.assertLessEqual(sync.estimate_tokens(len(agy_md)), 400)
+
+        claude_orch = outputs.get(BASE_DIR / ".claude" / "agents" / "orchestrator.md", "")
+        self.assertIn("## Claude Model Routing", claude_orch)
 
     def test_provider_filter(self):
         codex_only = sync.generate_all_outputs(BASE_DIR, "codex")
@@ -85,10 +87,10 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertTrue(any(p.name == "SKILL.md" for p in claude_only))
 
         antigravity_only = sync.generate_all_outputs(BASE_DIR, "antigravity")
-        self.assertEqual({p.name for p in antigravity_only}, {"AGENTS.md", "SKILL.md", "agent.md"})
+        self.assertEqual({p.name for p in antigravity_only}, {"AGENTS.md", "SKILL.md", "agent.md", "hooks.json"})
 
         agy_only = sync.generate_all_outputs(BASE_DIR, "agy")
-        self.assertEqual({p.name for p in agy_only}, {"AGENTS.md", "SKILL.md", "agent.md"})
+        self.assertEqual({p.name for p in agy_only}, {"AGENTS.md", "SKILL.md", "agent.md", "hooks.json"})
 
     def test_check_passes_on_current_repo(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -199,35 +201,42 @@ class TestSyncCompiler(unittest.TestCase):
         }
         rendered = sync.generate_project_config_toml(stack, BASE_DIR)
         parsed = sync.tomllib.loads(rendered)
+        self.assertEqual(parsed["schema_version"], 2)
         self.assertEqual(parsed["project"]["name"], stack["name"])
         self.assertEqual(parsed["project"]["description"], stack["description"])
-        for provider in ("codex", "claude", "antigravity"):
-            self.assertEqual(len(parsed[provider]["agents"]), 13)
-            self.assertIn("diagnostician", parsed[provider]["agents"])
-            for role in ("harness-optimizer", "agent-evaluator", "security-reviewer",
-                         "pr-test-analyzer", "silent-failure-hunter"):
-                self.assertIn(role, parsed[provider]["agents"])
-        self.assertEqual(parsed["codex"]["agents"]["implementer"]["reasoning_effort"], "medium")
-        self.assertEqual(parsed["claude"]["agents"]["implementer"]["thinking"], "medium")
-        self.assertEqual(parsed["antigravity"]["agents"]["implementer"]["reasoning"], "medium")
-        self.assertEqual(parsed["codex"]["orchestrator"]["model"], "gpt-6.1-sol")
-        self.assertEqual(parsed["codex"]["orchestrator"]["reasoning_effort"], "low")
-        expected_reasoning = {
-            "harness-optimizer": "high",
-            "agent-evaluator": "medium",
-            "security-reviewer": "high",
-            "pr-test-analyzer": "medium",
-            "silent-failure-hunter": "medium",
-        }
-        for role, reasoning in expected_reasoning.items():
-            expected_codex_model = "gpt-6.1-sol"
-            self.assertEqual(parsed["codex"]["agents"][role]["model"], expected_codex_model)
-            expected_codex_reasoning = "high" if role == "security-reviewer" else "medium"
-            self.assertEqual(parsed["codex"]["agents"][role]["reasoning_effort"], expected_codex_reasoning)
-            self.assertEqual(parsed["claude"]["agents"][role]["model"], "claude-3-7-sonnet")
-            self.assertEqual(parsed["claude"]["agents"][role]["thinking"], reasoning)
-            self.assertEqual(parsed["antigravity"]["agents"][role]["model"], "flash")
-            self.assertEqual(parsed["antigravity"]["agents"][role]["reasoning"], reasoning)
+        self.assertEqual(len(parsed["agents"]), 3)
+        self.assertIn("architect", parsed["agents"])
+        self.assertEqual(parsed["agents"]["architect"]["tier"], "balanced")
+        self.assertEqual(parsed["agents"]["architect"]["reasoning_effort"], "medium")
+        self.assertIn("implementer", parsed["agents"])
+        self.assertEqual(parsed["agents"]["implementer"]["tier"], "balanced")
+        self.assertEqual(parsed["agents"]["implementer"]["reasoning_effort"], "medium")
+        self.assertIn("verifier", parsed["agents"])
+        self.assertEqual(parsed["agents"]["verifier"]["tier"], "balanced")
+        self.assertEqual(parsed["agents"]["verifier"]["reasoning_effort"], "medium")
+        self.assertEqual(parsed["orchestrator"]["tier"], "balanced")
+        self.assertEqual(parsed["orchestrator"]["reasoning_effort"], "low")
+
+        codex_agents = sync.provider_agents(parsed, "codex")
+        claude_agents = sync.provider_agents(parsed, "claude")
+        antigravity_agents = sync.provider_agents(parsed, "antigravity")
+
+        self.assertEqual(len(codex_agents), 3)
+        self.assertEqual(len(claude_agents), 3)
+        self.assertEqual(len(antigravity_agents), 3)
+
+        balanced = parsed["models"]["balanced"]
+        for role in ("architect", "implementer", "verifier"):
+            self.assertEqual(codex_agents[role]["model"], balanced["codex"])
+            self.assertEqual(codex_agents[role]["reasoning_effort"], "medium")
+            self.assertEqual(claude_agents[role]["model"], balanced["claude"])
+            self.assertEqual(claude_agents[role]["thinking"], "medium")
+            self.assertEqual(antigravity_agents[role]["model"], balanced["antigravity"])
+            self.assertEqual(antigravity_agents[role]["reasoning"], "medium")
+
+        codex_orch = sync.resolve_orchestrator(parsed, "codex")
+        self.assertEqual(codex_orch["model"], balanced["codex"])
+        self.assertEqual(codex_orch["reasoning_effort"], "low")
 
     def test_missing_canonical_config_fails_clearly(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -248,9 +257,10 @@ class TestSyncCompiler(unittest.TestCase):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         for path in (
             BASE_DIR / ".codex" / "config.toml",
-            BASE_DIR / "AGENTS.md",
+            BASE_DIR / ".claude" / "agents" / "orchestrator.md",
         ):
             self.assertEqual(outputs[path].count(marker), 1, str(path))
+        self.assertEqual(outputs[BASE_DIR / "AGENTS.md"].count(marker), 0)
 
 
 
@@ -437,64 +447,65 @@ class TestSyncCompiler(unittest.TestCase):
     def test_native_provider_outputs_and_codex_hierarchy(self):
         outputs = sync.generate_all_outputs(BASE_DIR, "all")
         codex = outputs[BASE_DIR / ".codex" / "config.toml"]
-        self.assertIn("[agents.code-explorer]", codex)
+        self.assertIn("[agents.architect]", codex)
+        self.assertNotIn("[agents.code-explorer]", codex)
+        self.assertNotIn("[agents.planner]", codex)
+        self.assertNotIn("[agents.quick-implementer]", codex)
         self.assertNotIn("[agents]\n", codex)
         self.assertNotIn("[agents.orchestrator]", codex)
-        self.assertIn('model = "gpt-6.1-sol"', codex)
+        cfg = sync.load_config(BASE_DIR / sync.CONFIG_NAME)
+        codex_orch = sync.resolve_orchestrator(cfg, "codex")
+        codex_roster = sync.provider_agents(cfg, "codex")
+        claude_roster = sync.provider_agents(cfg, "claude")
+        self.assertIn(f'model = "{codex_orch["model"]}"', codex)
         self.assertIn('model_reasoning_effort = "low"', codex)
         self.assertIn("tool_output_token_limit = 6000", codex)
         self.assertIn("model_auto_compact_token_limit = 45000", codex)
         self.assertIn('model_auto_compact_token_limit_scope = "body_after_prefix"', codex)
         self.assertIn("MANDATORY MULTI-AGENT INSTRUCTION:", codex)
         self.assertIn("explicitly ask for sub-agents, delegation, and parallel agent work", codex)
-        for agent_name in ("planner", "implementer", "diagnostician", "code-reviewer"):
+        for agent_name in ("architect", "implementer", "verifier"):
             agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
             self.assertIn('model_reasoning_effort = "medium"', agent)
-        for agent_name in ("code-explorer", "quick-implementer", "code-validator", "commit-pusher"):
-            agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
-            self.assertIn('model_reasoning_effort = "low"', agent)
-        validator = outputs[BASE_DIR / ".codex" / "agents" / "code-validator.toml"]
-        self.assertIn('model = "gpt-6-luna"', validator)
-        expected_codex = {
-            "harness-optimizer": ("gpt-6.1-sol", "medium"),
-            "agent-evaluator": ("gpt-6.1-sol", "medium"),
-            "security-reviewer": ("gpt-6.1-sol", "high"),
-            "pr-test-analyzer": ("gpt-6.1-sol", "medium"),
-            "silent-failure-hunter": ("gpt-6.1-sol", "medium"),
-        }
-        for agent_name, (model, reasoning) in expected_codex.items():
-            agent = outputs[BASE_DIR / ".codex" / "agents" / f"{agent_name}.toml"]
-            self.assertIn(f'model = "{model}"', agent)
-            self.assertIn(f'model_reasoning_effort = "{reasoning}"', agent)
+            self.assertIn(f'model = "{codex_roster[agent_name]["model"]}"', agent)
+            self.assertNotIn("## Model escalation ladder", agent)
         self.assertNotIn(BASE_DIR / "CLAUDE.md", outputs)
         claude_agent = outputs[BASE_DIR / ".claude" / "agents" / "implementer.md"]
         self.assertTrue(claude_agent.startswith("---\nname: implementer\n"))
         self.assertIn("implementer agent for autonomous-dev-team", claude_agent)
-        self.assertIn("reasoning effort: medium", claude_agent)
-        self.assertIn("provider-configured `medium` reasoning effort", claude_agent)
+        self.assertIn("provider-configured reasoning effort", claude_agent)
         self.assertNotIn("Default:** `low` reasoning effort", claude_agent)
-        expected_claude_reasoning = {
-            "harness-optimizer": "high",
-            "agent-evaluator": "medium",
-            "security-reviewer": "high",
-            "pr-test-analyzer": "medium",
-            "silent-failure-hunter": "medium",
-        }
-        for agent_name, reasoning in expected_claude_reasoning.items():
+        for agent_name in ("architect", "implementer", "verifier"):
             claude_agent = outputs[BASE_DIR / ".claude" / "agents" / f"{agent_name}.md"]
-            self.assertIn("model: claude-3-7-sonnet", claude_agent)
-            self.assertIn(f"reasoning effort: {reasoning}", claude_agent)
+            self.assertIn(f"model: {claude_roster[agent_name]['model']}", claude_agent)
+            self.assertIn(f"reasoning effort: {claude_roster[agent_name]['thinking']}", claude_agent)
+            self.assertNotIn("## Model escalation ladder", claude_agent)
+        orch_claude = outputs[BASE_DIR / ".claude" / "agents" / "orchestrator.md"]
+        self.assertIn("Use Claude Code's native agent configuration", orch_claude)
+        self.assertIn("## Claude Model Routing", orch_claude)
+        for agent_name in ("architect", "implementer", "verifier"):
+            a = claude_roster[agent_name]
+            self.assertIn(f"- `{agent_name}`: `{a['model']}` (thinking: `{a['thinking']}`; advisory)", orch_claude)
+        models = cfg["models"]
+        self.assertIn("## Model escalation ladder", codex)
+        self.assertIn(
+            f"- `implementer`: `balanced` (`{models['balanced']['codex']}`, effort `medium`) -> "
+            f"`balanced` (`{models['balanced']['codex']}`, effort `high`) -> "
+            f"`deep` (`{models['deep']['codex']}`, effort `medium`) -> "
+            f"`ultra` (`{models['ultra']['codex']}`, effort `medium`, exceptional)",
+            codex,
+        )
+        self.assertIn(
+            f"- `implementer`: `balanced` (`{models['balanced']['claude']}`, effort `medium`) -> "
+            f"`deep` (`{models['deep']['claude']}`, effort `medium`) -> "
+            f"`ultra` (`{models['ultra']['claude']}`, effort `medium`, exceptional)",
+            orch_claude,
+        )
         agents_md = outputs[BASE_DIR / "AGENTS.md"]
-        self.assertIn("# Antigravity & Claude Code Delegation Adapter", agents_md)
-        self.assertIn("Use Claude Code's native agent configuration", agents_md)
-        self.assertIn("## Claude Model Routing", agents_md)
-        for agent_name, reasoning in expected_claude_reasoning.items():
-            self.assertIn(f"- `{agent_name}`: `claude-3-7-sonnet` (thinking: `{reasoning}`)", agents_md)
-        self.assertIn("## Antigravity Dispatch Syntax", agents_md)
-        self.assertIn("Role` to the\nagent name", agents_md)
-        for agent_name in ("harness-optimizer", "agent-evaluator", "security-reviewer",
-                           "pr-test-analyzer", "silent-failure-hunter"):
-            self.assertIn(f"- `{agent_name}`: model `flash`", agents_md)
+        self.assertNotIn("## Claude Model Routing", agents_md)
+        self.assertNotIn("## Antigravity Dispatch Syntax", agents_md)
+        self.assertLessEqual(len(agents_md), 1600)
+        self.assertLessEqual(sync.estimate_tokens(len(agents_md)), 400)
         self.assertNotIn("specialist", agents_md.lower())
         self.assertNotIn("GEMINI.md", [p.name for p in outputs])
 
@@ -503,22 +514,24 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertNotIn(BASE_DIR / "CLAUDE.md", outputs)
         adapters = (
             outputs[BASE_DIR / ".codex" / "config.toml"],
-            outputs[BASE_DIR / "AGENTS.md"],
+            outputs[BASE_DIR / ".claude" / "agents" / "orchestrator.md"],
         )
         for content in adapters:
             self.assertIn("Highest-priority `/team` fast path", content)
             self.assertIn("treat `--team` exclusively as a direct `sync.py` argument", content)
             self.assertIn("`npm run build --team` is invalid", content)
             self.assertIn("without a fallback command", content)
-            self.assertIn("scope is at most one implementation file plus one directly related test or configuration file", content)
+            self.assertIn("touches ≤3 files, modifies ≤150 lines", content)
             self.assertIn("never remove a required correctness gate", content)
             self.assertIn("permit multiple gates for genuinely distinct risks", content)
             self.assertIn("After 8 direct tool calls", content)
             self.assertIn("after 12, replan or explain", content)
             self.assertIn("Never report success while required verification is failing or incomplete", content)
+        self.assertNotIn("Highest-priority `/team` fast path", outputs[BASE_DIR / "AGENTS.md"])
+        self.assertNotIn("Adaptive routing", outputs[BASE_DIR / "AGENTS.md"])
 
         implementer_prompt = (BASE_DIR / "agents" / "implementer.md").read_text(encoding="utf-8")
-        self.assertIn("provider-configured `medium` reasoning effort", implementer_prompt)
+        self.assertIn("provider-configured reasoning effort", implementer_prompt)
         self.assertNotIn("Escalate to `medium` or `high`", implementer_prompt)
 
     def test_manifest_stale_cleanup_is_guarded(self):
@@ -584,8 +597,12 @@ class TestSyncCompiler(unittest.TestCase):
         self.assertIn("Google Antigravity", output)
         self.assertIn("✓ In sync", output)
         self.assertIn("orchestrator (/root)", output)
-        self.assertIn("code-explorer", output)
-        self.assertIn("flash", output)
+        self.assertIn("architect", output)
+        cfg = sync.load_config(BASE_DIR / sync.CONFIG_NAME)
+        self.assertIn(cfg["models"]["balanced"]["antigravity"], output)
+        self.assertIn("adaptive: balanced `", output)
+        self.assertIn("effort unsupported; ineffective steps collapsed", output)
+        self.assertNotIn("-> ultra `", output)
 
     def test_inspect_team_all_providers(self):
         buf = io.StringIO()
@@ -940,6 +957,29 @@ class TestSyncCompiler(unittest.TestCase):
             self.assertNotIn("CLAUDE.md", manifest["files"])
             self.assertIn("AGENTS.md", manifest["files"])
 
+    def test_stale_claude_agents_are_unlinked_when_tracked_in_manifest(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            stale_agent = tmppath / ".claude" / "agents" / "code-explorer.md"
+            stale_agent.parent.mkdir(parents=True, exist_ok=True)
+            stale_agent.write_text("---\nname: code-explorer\n---\n# Stale Agent", encoding="utf-8")
+            (tmppath / sync.MANIFEST_NAME).write_text(
+                json.dumps({
+                    "schema": sync.SCHEMA_NAME,
+                    "version": sync.SCHEMA_VERSION,
+                    "files": [".claude/agents/code-explorer.md"]
+                }),
+                encoding="utf-8"
+            )
+            self.assertTrue(stale_agent.exists())
+            sync.run_sync(tmppath, "claude")
+            self.assertFalse(stale_agent.exists())
+            manifest = json.loads((tmppath / sync.MANIFEST_NAME).read_text(encoding="utf-8"))
+            self.assertNotIn(".claude/agents/code-explorer.md", manifest["files"])
+            self.assertIn(".claude/agents/architect.md", manifest["files"])
+
     def test_compile_agents_md_and_output_provider(self):
         self.assertEqual(sync.output_provider("AGENTS.md"), "shared")
         self.assertEqual(sync.output_provider("CLAUDE.md"), "claude")
@@ -951,26 +991,512 @@ class TestSyncCompiler(unittest.TestCase):
         project = config.get("project", {})
         guardrails = sync.build_project_guardrails(project)
 
-        # Provider: all
-        all_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "all")
-        self.assertIn("# Antigravity & Claude Code Delegation Adapter", all_md)
-        self.assertIn("## Claude Subagent Guidance", all_md)
-        self.assertIn("## Claude Model Routing", all_md)
-        self.assertIn("## Antigravity Dispatch Syntax", all_md)
+        slim_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "all")
+        self.assertIn("# autonomous-dev-team", slim_md)
+        self.assertIn("## Repository Guardrails & Commands", slim_md)
+        self.assertNotIn("## Claude Subagent Guidance", slim_md)
+        self.assertNotIn("## Claude Model Routing", slim_md)
+        self.assertNotIn("## Antigravity Dispatch Syntax", slim_md)
+        self.assertNotIn("Adaptive routing", slim_md)
+        self.assertNotIn("Highest-priority `/team` fast path", slim_md)
+        self.assertLessEqual(len(slim_md), 1600)
+        self.assertLessEqual(sync.estimate_tokens(len(slim_md)), 400)
 
-        # Provider: claude
-        claude_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "claude")
-        self.assertIn("# Claude Code Delegation Adapter", claude_md)
-        self.assertIn("## Claude Subagent Guidance", claude_md)
-        self.assertIn("## Claude Model Routing", claude_md)
-        self.assertNotIn("## Antigravity Dispatch Syntax", claude_md)
+    def test_estimate_tokens(self):
+        self.assertEqual(sync.estimate_tokens(0), 0)
+        self.assertEqual(sync.estimate_tokens(4), 1)
+        self.assertEqual(sync.estimate_tokens(10), 2)
+        self.assertEqual(sync.estimate_tokens(100), 25)
+        self.assertEqual(sync.estimate_tokens(9758), 2440)
 
-        # Provider: antigravity
-        agy_md = sync.compile_agents_md(config, project, guardrails, BASE_DIR, "antigravity")
-        self.assertIn("# Antigravity Delegation Adapter", agy_md)
-        self.assertNotIn("## Claude Subagent Guidance", agy_md)
-        self.assertNotIn("## Claude Model Routing", agy_md)
-        self.assertIn("## Antigravity Dispatch Syntax", agy_md)
+    def test_run_stats_data(self):
+        stats = sync.run_stats(BASE_DIR, "all", quiet=True)
+        self.assertIn("antigravity", stats)
+        self.assertIn("claude", stats)
+        self.assertIn("codex", stats)
+
+        for prov in ("antigravity", "claude", "codex"):
+            p_data = stats[prov]
+            self.assertEqual(p_data["provider"], prov)
+            self.assertIn("display_name", p_data)
+            self.assertIn("ambient", p_data)
+            self.assertIn("orchestrator", p_data)
+            self.assertIn("subagents", p_data)
+            self.assertIn("total_active_tree", p_data)
+
+            ambient = p_data["ambient"]
+            self.assertIsInstance(ambient["characters"], int)
+            self.assertEqual(ambient["tokens"], sync.estimate_tokens(ambient["characters"]))
+            if prov in ("antigravity", "claude"):
+                self.assertLessEqual(ambient["characters"], 1600)
+                self.assertLessEqual(ambient["tokens"], 400)
+
+            orch = p_data["orchestrator"]
+            self.assertIsInstance(orch["characters"], int)
+            self.assertGreater(orch["characters"], 0)
+            self.assertEqual(orch["tokens"], sync.estimate_tokens(orch["characters"]))
+
+            tree = p_data["total_active_tree"]
+            self.assertIsInstance(tree["characters"], int)
+            self.assertGreater(tree["characters"], 0)
+            self.assertEqual(tree["tokens"], sync.estimate_tokens(tree["characters"]))
+            expected_files = 13 if prov == "codex" else 14
+            self.assertEqual(tree["files_count"], expected_files)
+
+            subagents = p_data["subagents"]
+            self.assertIn("implementer", subagents)
+            self.assertIn("architect", subagents)
+            self.assertIn("verifier", subagents)
+            self.assertEqual(len(subagents), 3)
+
+            for role_name, s_info in subagents.items():
+                self.assertGreater(s_info["role_characters"], 0)
+                self.assertEqual(
+                    s_info["start_cost_characters"],
+                    s_info["role_characters"] + ambient["characters"]
+                )
+                self.assertEqual(
+                    s_info["start_cost_tokens"],
+                    sync.estimate_tokens(s_info["start_cost_characters"])
+                )
+
+    def test_stats_cli(self):
+        # 1. Test full stats CLI output
+        res = subprocess.run(
+            [sys.executable, str(BASE_DIR / "sync.py"), "--stats"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res.returncode, 0, f"sync.py --stats failed: {res.stderr}")
+        self.assertIn("Autonomous Dev Team — Context & Token Statistics", res.stdout)
+        self.assertIn("[Google Antigravity]", res.stdout)
+        self.assertIn("[Claude Code]", res.stdout)
+        self.assertIn("[Codex]", res.stdout)
+        self.assertIn("Ambient Files:", res.stdout)
+        self.assertIn("Root Orchestrator:", res.stdout)
+        self.assertIn("Subagent Start Costs (ambient + role):", res.stdout)
+        self.assertIn("Total Active Tree:", res.stdout)
+        self.assertIn("implementer", res.stdout)
+        self.assertIn("architect", res.stdout)
+        self.assertIn("verifier", res.stdout)
+
+        # 2. Test scoped stats CLI output (--provider claude)
+        res_claude = subprocess.run(
+            [sys.executable, str(BASE_DIR / "sync.py"), "--stats", "--provider", "claude"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res_claude.returncode, 0, f"sync.py --stats --provider claude failed: {res_claude.stderr}")
+        self.assertIn("[Claude Code]", res_claude.stdout)
+        self.assertNotIn("[Google Antigravity]", res_claude.stdout)
+        self.assertNotIn("[Codex]", res_claude.stdout)
+
+    def test_golden_set_tasks(self):
+        tasks_file = BASE_DIR / "tests" / "golden_set" / "tasks.json"
+        self.assertTrue(tasks_file.is_file())
+        tasks = json.loads(tasks_file.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(tasks), 8)
+        self.assertLessEqual(len(tasks), 12)
+
+        tiers = {t["tier"] for t in tasks}
+        self.assertIn("T1", tiers)
+        self.assertIn("T2", tiers)
+        self.assertIn("T3", tiers)
+
+        required_keys = {"id", "tier", "description", "files_touched", "expected_verification", "risk_category"}
+        for task in tasks:
+            for k in required_keys:
+                self.assertIn(k, task)
+            self.assertIsInstance(task["files_touched"], list)
+            self.assertGreater(len(task["files_touched"]), 0)
+
+    def test_v1_snapshot_fixtures(self):
+        snapshot_dir = BASE_DIR / "tests" / "fixtures" / "v1_snapshot"
+        self.assertTrue(snapshot_dir.is_dir())
+        self.assertTrue((snapshot_dir / "AGENTS.md").is_file())
+        self.assertTrue((snapshot_dir / ".codex" / "config.toml").is_file())
+        self.assertTrue((snapshot_dir / ".claude" / "agents" / "implementer.md").is_file())
+        self.assertTrue((snapshot_dir / ".agents" / "agents" / "implementer" / "agent.md").is_file())
+
+    def test_schema_v1_hard_fails(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            v1_config = tmppath / sync.CONFIG_NAME
+            v1_config.write_text(
+                '[schema]\nname = "autonomous-dev-team"\nversion = 1\n[project]\nname = "v1-app"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as cm:
+                sync.load_config(v1_config)
+            self.assertEqual(str(cm.exception), "Error: Config schema v1 is unsupported. Update to schema_version = 2.")
+
+            # Also verify when schema_version is missing entirely
+            missing_version_cfg = tmppath / "no_version.toml"
+            missing_version_cfg.write_text('[project]\nname = "no-version"\n', encoding="utf-8")
+            with self.assertRaises(SystemExit) as cm:
+                sync.load_config(missing_version_cfg)
+            self.assertEqual(str(cm.exception), "Error: Config schema v1 is unsupported. Update to schema_version = 2.")
+
+    def test_adaptive_reasoning_policy(self):
+        cfg = sync.load_config(Path(__file__).resolve().parents[1] / ".autonomous-dev-team.toml")
+        steps = sync.resolve_adaptive_steps(cfg, "codex")["implementer"]
+        self.assertEqual([(s["tier"], s["effort"]) for s in steps],
+                         [("balanced", "medium"), ("balanced", "high"),
+                          ("deep", "medium"), ("ultra", "medium")])
+        native = sync.render_escalation_ladder(cfg, "codex")
+        self.assertIn("model AND reasoning_effort", native)
+        self.assertIn("max 3 total repair attempts", native)
+        self.assertIn("advisory", sync.render_escalation_ladder(cfg, "claude"))
+        self.assertIn("unsupported", sync.render_escalation_ladder(cfg, "antigravity"))
+        self.assertEqual(len(sync.resolve_adaptive_steps(cfg, "antigravity")["implementer"]), 1)
+        self.assertEqual(len(sync.resolve_adaptive_steps(cfg, "claude")["implementer"]), 3)
+        self.assertIn("reset for unrelated slices", (BASE_DIR / "agents/orchestrator.md").read_text())
+        self.assertIn("never reset the counter by escalating", (BASE_DIR / "agents/orchestrator.md").read_text())
+        cfg["agents"]["implementer"]["adaptive_steps"][0]["effort"] = "typo"
+        self.assertTrue(any("effort" in e for e in sync.validate_model_tiers(cfg)))
+        cfg["reasoning_policy"]["max_repairs"] = 0
+        self.assertTrue(any("max_repairs" in e for e in sync.validate_model_tiers(cfg)))
+
+    def test_escalation_ladder_resolution_and_tier_validation(self):
+        cfg = {
+            "schema_version": 2,
+            "models": {
+                "balanced": {"codex": "c-bal", "claude": "cl-bal", "antigravity": "a-bal"},
+                "deep": {"codex": "c-deep", "claude": "cl-deep", "antigravity": "a-deep"},
+                "ultra": {"codex": "c-ultra", "claude": "cl-ultra", "antigravity": "a-ultra"},
+            },
+            "orchestrator": {"tier": "balanced"},
+            "agents": {
+                "implementer": {"tier": "balanced", "escalation": ["deep", "ultra"]},
+                "verifier": {"tier": "balanced"},
+            },
+        }
+        self.assertEqual(sync.validate_model_tiers(cfg), [])
+        ladders = sync.resolve_escalation_ladders(cfg, "claude")
+        self.assertEqual(ladders, {"implementer": [("balanced", "cl-bal"), ("deep", "cl-deep"), ("ultra", "cl-ultra")]})
+        self.assertNotIn("verifier", ladders)
+        self.assertIn("`balanced` (`c-bal`) -> `deep` (`c-deep`) -> `ultra` (`c-ultra`)",
+                      sync.render_escalation_ladder(cfg, "codex"))
+
+        cfg["agents"]["implementer"]["escalation"] = ["deep", "hyper"]
+        cfg["agents"]["verifier"]["tier"] = "ultar"
+        errors = sync.validate_model_tiers(cfg)
+        self.assertTrue(any("'hyper'" in e for e in errors))
+        self.assertTrue(any("agents.verifier references unknown model tier 'ultar'" in e for e in errors))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bad = Path(tmpdir) / "bad.toml"
+            bad.write_text(
+                'schema_version = 2\n[models]\nbalanced = { codex = "x" }\n'
+                '[agents.implementer]\ntier = "balanced"\nescalation = ["ultra"]\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as cm:
+                sync.load_config(bad)
+            self.assertIn("unknown model tier 'ultra'", str(cm.exception))
+
+    def test_schema_v2_model_aliases(self):
+        sample_config = {
+            "schema_version": 2,
+            "project": {"name": "test-project"},
+            "models": {
+                "fast": {"codex": "gpt-6-luna", "claude": "claude-3-5-haiku", "antigravity": "flash"},
+                "balanced": {"codex": "gpt-6.1-sol", "claude": "claude-3-7-sonnet", "antigravity": "flash"},
+                "deep": {"codex": "gpt-6.1-sol", "claude": "claude-3-7-sonnet", "antigravity": "flash"},
+            },
+            "orchestrator": {
+                "tier": "balanced",
+                "reasoning_effort": "low",
+            },
+            "agents": {
+                "fast-agent": {
+                    "description": "Fast scout",
+                    "tier": "fast",
+                    "reasoning_effort": "low",
+                },
+                "balanced-agent": {
+                    "description": "Balanced builder",
+                    "tier": "balanced",
+                    "reasoning_effort": "medium",
+                },
+                "deep-agent": {
+                    "description": "Deep planner",
+                    "tier": "deep",
+                    "reasoning_effort": "high",
+                },
+            },
+        }
+
+        # 1. Test Codex resolution
+        codex_agents = sync.provider_agents(sample_config, "codex")
+        self.assertEqual(codex_agents["fast-agent"]["model"], "gpt-6-luna")
+        self.assertEqual(codex_agents["fast-agent"]["reasoning_effort"], "low")
+        self.assertEqual(codex_agents["balanced-agent"]["model"], "gpt-6.1-sol")
+        self.assertEqual(codex_agents["balanced-agent"]["reasoning_effort"], "medium")
+        self.assertEqual(codex_agents["deep-agent"]["model"], "gpt-6.1-sol")
+        self.assertEqual(codex_agents["deep-agent"]["reasoning_effort"], "high")
+
+        # 2. Test Claude resolution (thinking follows reasoning_effort for every model)
+        claude_agents = sync.provider_agents(sample_config, "claude")
+        self.assertEqual(claude_agents["fast-agent"]["model"], "claude-3-5-haiku")
+        self.assertEqual(claude_agents["fast-agent"]["thinking"], "low")
+        self.assertEqual(claude_agents["balanced-agent"]["model"], "claude-3-7-sonnet")
+        self.assertEqual(claude_agents["balanced-agent"]["thinking"], "medium")
+        self.assertEqual(claude_agents["deep-agent"]["model"], "claude-3-7-sonnet")
+        self.assertEqual(claude_agents["deep-agent"]["thinking"], "high")
+
+        # 3. Test Antigravity resolution
+        agy_agents = sync.provider_agents(sample_config, "antigravity")
+        self.assertEqual(agy_agents["fast-agent"]["model"], "flash")
+        self.assertEqual(agy_agents["fast-agent"]["reasoning"], "low")
+        self.assertEqual(agy_agents["balanced-agent"]["model"], "flash")
+        self.assertEqual(agy_agents["balanced-agent"]["reasoning"], "medium")
+        self.assertEqual(agy_agents["deep-agent"]["model"], "flash")
+        self.assertEqual(agy_agents["deep-agent"]["reasoning"], "high")
+
+        # 4. Test Orchestrator resolution across all providers
+        codex_orch = sync.resolve_orchestrator(sample_config, "codex")
+        self.assertEqual(codex_orch["model"], "gpt-6.1-sol")
+        self.assertEqual(codex_orch["reasoning_effort"], "low")
+
+        claude_orch = sync.resolve_orchestrator(sample_config, "claude")
+        self.assertEqual(claude_orch["model"], "claude-3-7-sonnet")
+        self.assertEqual(claude_orch["thinking"], "low")
+
+        agy_orch = sync.resolve_orchestrator(sample_config, "antigravity")
+        self.assertEqual(agy_orch["model"], "flash")
+        self.assertEqual(agy_orch["reasoning"], "low")
+
+    def test_check_fails_on_budget_exceeded(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            sync.run_sync(tmppath)
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 0)
+
+            # 1. Bloat AGENTS.md directly beyond MAX_AMBIENT_CHARS (1600 chars)
+            agents_file = tmppath / "AGENTS.md"
+            original_agents_content = agents_file.read_text(encoding="utf-8")
+            agents_file.write_text(original_agents_content + "\n" + ("X" * 2000), encoding="utf-8")
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 1)
+
+            # Reset AGENTS.md
+            agents_file.write_text(original_agents_content, encoding="utf-8")
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 0)
+
+            # 2. Bloat canonical source agents/implementer.md and sync
+            impl_src = tmppath / "agents" / "implementer.md"
+            original_impl_content = impl_src.read_text(encoding="utf-8")
+            impl_src.write_text(original_impl_content + "\n" + ("Y" * 2000), encoding="utf-8")
+            sync.run_sync(tmppath)
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 1)
+
+            # Reset implementer.md
+            impl_src.write_text(original_impl_content, encoding="utf-8")
+            sync.run_sync(tmppath)
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 0)
+
+    def test_check_fails_on_orchestrator_leakage(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+            sync.run_sync(tmppath)
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 0)
+
+            impl_src = tmppath / "agents" / "implementer.md"
+            original_impl_content = impl_src.read_text(encoding="utf-8")
+
+            for marker in sync.LEAKAGE_MARKERS:
+                impl_src.write_text(original_impl_content + f"\nForbidden marker: {marker}\n", encoding="utf-8")
+                sync.run_sync(tmppath)
+                self.assertEqual(
+                    sync.run_check(tmppath, quiet=True),
+                    1,
+                    f"run_check should fail when leakage marker '{marker}' is present",
+                )
+
+            # Reset and verify clean check passes
+            impl_src.write_text(original_impl_content, encoding="utf-8")
+            sync.run_sync(tmppath)
+            self.assertEqual(sync.run_check(tmppath, quiet=True), 0)
+
+    def test_run_verify_cli(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+
+            # 1. Verify success path with passing verify commands
+            pass_cfg = """
+schema_version = 2
+active_provider = "all"
+[project]
+name = "test-proj"
+[verify]
+commands = ["python3 -c \\"import sys; sys.exit(0)\\""]
+"""
+            (tmppath / sync.CONFIG_NAME).write_text(pass_cfg.strip() + "\n", encoding="utf-8")
+
+            # Standard mode
+            self.assertEqual(sync.run_verify(tmppath, hook_mode=False), 0)
+
+            # Hook mode
+            with io.StringIO() as buf, redirect_stdout(buf):
+                ret = sync.run_verify(tmppath, hook_mode=True)
+                self.assertEqual(ret, 0)
+                payload = json.loads(buf.getvalue().strip())
+                self.assertEqual(payload, {"decision": "allow"})
+
+            # CLI subprocess with --run-verify
+            res = subprocess.run(
+                [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--dir", str(tmppath)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0)
+
+            # CLI subprocess with --run-verify --hook
+            res_hook = subprocess.run(
+                [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--hook", "--dir", str(tmppath)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res_hook.returncode, 0)
+            payload = json.loads(res_hook.stdout.strip())
+            self.assertEqual(payload, {"decision": "allow"})
+
+            # 2. Verify failure path with failing verify commands
+            fail_cfg = """
+schema_version = 2
+active_provider = "all"
+[project]
+name = "test-proj"
+[verify]
+commands = ["python3 -c \\"import sys; sys.exit(1)\\""]
+"""
+            (tmppath / sync.CONFIG_NAME).write_text(fail_cfg.strip() + "\n", encoding="utf-8")
+
+            # Standard mode (exits 1)
+            self.assertEqual(sync.run_verify(tmppath, hook_mode=False), 1)
+
+            # Hook mode (exits 0 with continue decision)
+            with io.StringIO() as buf, redirect_stdout(buf):
+                ret = sync.run_verify(tmppath, hook_mode=True)
+                self.assertEqual(ret, 0)
+                payload = json.loads(buf.getvalue().strip())
+                self.assertEqual(payload["decision"], "continue")
+                self.assertIn("reason", payload)
+
+            # CLI subprocess failure
+            res_fail = subprocess.run(
+                [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--dir", str(tmppath)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res_fail.returncode, 1)
+
+            # CLI subprocess failure in hook mode
+            res_fail_hook = subprocess.run(
+                [sys.executable, str(BASE_DIR / "sync.py"), "--run-verify", "--hook", "--dir", str(tmppath)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res_fail_hook.returncode, 0)
+            payload_fail = json.loads(res_fail_hook.stdout.strip())
+            self.assertEqual(payload_fail["decision"], "continue")
+
+    def test_antigravity_hooks_generation(self):
+        hooks_content = sync.compile_antigravity_hooks(BASE_DIR)
+        hooks_data = json.loads(hooks_content)
+        self.assertIn("verify-gate", hooks_data)
+        self.assertIn("Stop", hooks_data["verify-gate"])
+        stop_actions = hooks_data["verify-gate"]["Stop"]
+        self.assertEqual(len(stop_actions), 1)
+        self.assertEqual(stop_actions[0]["type"], "command")
+        self.assertIn("sync.py --run-verify --hook", stop_actions[0]["command"])
+
+        # Encapsulated base_dir
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            nested = tmppath / sync.ENCAPSULATED_DIR_NAME
+            nested.mkdir()
+            (nested / "sync.py").touch()
+            encap_hooks = json.loads(sync.compile_antigravity_hooks(tmppath))
+            self.assertIn(f"{sync.ENCAPSULATED_DIR_NAME}/sync.py", encap_hooks["verify-gate"]["Stop"][0]["command"])
+
+    def test_canonical_roster_consolidation(self):
+        """Verifies exactly 3 subagents (architect, implementer, verifier) are compiled and deprecated roles are pruned."""
+        config_path = BASE_DIR / sync.CONFIG_NAME
+        cfg = sync.load_config(config_path)
+        self.assertEqual(set(cfg.get("agents", {}).keys()), {"architect", "implementer", "verifier"})
+
+        # Verifier strength at least as strong as implementer
+        impl_tier = cfg["agents"]["implementer"]["tier"]
+        verif_tier = cfg["agents"]["verifier"]["tier"]
+        tier_ranks = {"fast": 1, "balanced": 2, "deep": 3, "ultra": 4}
+        self.assertGreaterEqual(tier_ranks[verif_tier], tier_ranks[impl_tier])
+
+        # Implementer escalation ladder climbs strictly: balanced -> deep -> ultra
+        ladder = [impl_tier] + cfg["agents"]["implementer"].get("escalation", [])
+        self.assertEqual(ladder, ["balanced", "deep", "ultra"])
+        self.assertEqual([tier_ranks[t] for t in ladder], sorted({tier_ranks[t] for t in ladder}))
+        for prov in ("codex", "claude", "antigravity"):
+            self.assertIn(prov, cfg["models"]["ultra"])
+
+        outputs = sync.generate_all_outputs(BASE_DIR, "all")
+        codex_subagents = [p.name for p in outputs.keys() if ".codex/agents" in str(p)]
+        claude_subagents = [p.name for p in outputs.keys() if ".claude/agents" in str(p) and p.name != "orchestrator.md"]
+        agy_subagents = [p.parent.name for p in outputs.keys() if ".agents/agents" in str(p) and p.name == "agent.md"]
+
+        expected_roles = {"architect", "implementer", "verifier"}
+        self.assertEqual(set(s.replace(".toml", "") for s in codex_subagents), expected_roles)
+        self.assertEqual(set(s.replace(".md", "") for s in claude_subagents), expected_roles)
+        self.assertEqual(set(agy_subagents), expected_roles)
+
+        # Manifest synchronization cleanly unlinks deprecated role files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            self.copy_canonical_sources(tmppath)
+            shutil.copy(BASE_DIR / sync.CONFIG_NAME, tmppath / sync.CONFIG_NAME)
+
+            # Simulate preexisting deprecated roles tracked in manifest
+            deprecated_files = [
+                ".claude/agents/code-validator.md",
+                ".claude/agents/code-reviewer.md",
+                ".claude/agents/diagnostician.md",
+                ".codex/agents/code-validator.toml",
+                ".codex/agents/code-reviewer.toml",
+                ".codex/agents/diagnostician.toml",
+                ".agents/agents/code-validator/agent.md",
+                ".agents/agents/code-reviewer/agent.md",
+                ".agents/agents/diagnostician/agent.md",
+            ]
+            for dep in deprecated_files:
+                fpath = tmppath / dep
+                fpath.parent.mkdir(parents=True, exist_ok=True)
+                fpath.write_text("AUTO-GENERATED BY sync.py\nlegacy content", encoding="utf-8")
+
+            (tmppath / sync.MANIFEST_NAME).write_text(
+                json.dumps({"schema": sync.SCHEMA_NAME, "version": sync.SCHEMA_VERSION, "files": deprecated_files}),
+                encoding="utf-8"
+            )
+
+            sync.run_sync(tmppath, "all")
+
+            for dep in deprecated_files:
+                self.assertFalse((tmppath / dep).exists(), f"Deprecated file {dep} was not unlinked")
+
+            # Check that empty parent directories in .agents/agents/ were pruned
+            for dep_role in ("code-validator", "code-reviewer", "diagnostician"):
+                self.assertFalse((tmppath / ".agents" / "agents" / dep_role).exists())
+
+            # Check active subagents exist
+            self.assertTrue((tmppath / ".claude" / "agents" / "verifier.md").exists())
+            self.assertTrue((tmppath / ".codex" / "agents" / "verifier.toml").exists())
+            self.assertTrue((tmppath / ".agents" / "agents" / "verifier" / "agent.md").exists())
 
 
 if __name__ == "__main__":

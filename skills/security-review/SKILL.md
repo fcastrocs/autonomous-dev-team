@@ -13,4 +13,4 @@ Use this skill when a task introduces or changes a security-sensitive boundary.
 4. Distinguish confirmed vulnerabilities from hardening suggestions and unknowns.
 5. Verify a requested fix with a focused regression check when permitted.
 
-Keep review read-only unless implementation was requested. This skill guides security work; it does not automatically invoke the security-reviewer or expand access.
+Keep review read-only unless implementation was requested. This skill guides security work; it does not expand access.

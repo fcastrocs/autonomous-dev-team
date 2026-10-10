@@ -1,0 +1,116 @@
+[
+  {
+    "id": "T1-01-doc-readme-typo",
+    "tier": "T1",
+    "description": "Fix typo and clarify command usage flags in README.md documentation.",
+    "files_touched": [
+      "README.md"
+    ],
+    "expected_verification": "python3 sync.py --check",
+    "risk_category": "documentation"
+  },
+  {
+    "id": "T1-02-surgical-token-limit",
+    "tier": "T1",
+    "description": "Update default tool_output_token_limit constant fallback value in sync.py.",
+    "files_touched": [
+      "sync.py"
+    ],
+    "expected_verification": "python3 -m unittest tests/test_sync.py",
+    "risk_category": "surgical-config"
+  },
+  {
+    "id": "T1-03-three-file-cli-arg",
+    "tier": "T1",
+    "description": "Add --quiet flag to sync.py and update test_sync.py helper and README.md with usage.",
+    "files_touched": [
+      "sync.py",
+      "tests/test_sync.py",
+      "README.md"
+    ],
+    "expected_verification": "python3 -m unittest tests/test_sync.py",
+    "risk_category": "cli-contract"
+  },
+  {
+    "id": "T2-01-feature-stats-reporter",
+    "tier": "T2",
+    "description": "Implement sync.py --stats CLI flag and run_stats reporter for ambient, orchestrator, and subagent token metrics.",
+    "files_touched": [
+      "sync.py",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py --stats && python3 -m unittest tests/test_sync.py",
+    "risk_category": "feature"
+  },
+  {
+    "id": "T2-02-feature-custom-token-ratio",
+    "tier": "T2",
+    "description": "Add configurable characters-per-token ratio and per-subagent token threshold warnings in sync.py.",
+    "files_touched": [
+      "sync.py",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 -m unittest tests/test_sync.py",
+    "risk_category": "feature"
+  },
+  {
+    "id": "T2-03-bug-py39-tomllib-crash",
+    "tier": "T2",
+    "description": "Diagnose and fix unexpected ModuleNotFoundError crash on macOS default Python 3.9 when running sync.py --team.",
+    "files_touched": [
+      "sync.py",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py --team && python3 -m unittest tests/test_sync.py",
+    "risk_category": "unknown-cause-bug"
+  },
+  {
+    "id": "T2-04-bug-stale-agent-pruning",
+    "tier": "T2",
+    "description": "Diagnose and resolve failure where removed agents leave orphaned configuration files on disk after compilation.",
+    "files_touched": [
+      "sync.py",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py --check && python3 -m unittest tests/test_sync.py",
+    "risk_category": "unknown-cause-bug"
+  },
+  {
+    "id": "T3-01-arch-multi-subsystem-split",
+    "tier": "T3",
+    "description": "Architect multi-subsystem boundaries and compile-time isolation enforcement across frontend and backend services.",
+    "files_touched": [
+      ".autonomous-dev-team.toml",
+      "sync.py",
+      "agents/orchestrator.md",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py && python3 -m unittest discover tests",
+    "risk_category": "architecture-multi-subsystem"
+  },
+  {
+    "id": "T3-02-security-credential-redaction",
+    "tier": "T3",
+    "description": "Implement strict secret, token, and credential redaction across all provider compiler output pipelines and subagent personas.",
+    "files_touched": [
+      "sync.py",
+      "agents/security-reviewer.md",
+      "skills/security-review/SKILL.md",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py --check && python3 -m unittest tests/test_sync.py",
+    "risk_category": "security-sensitive"
+  },
+  {
+    "id": "T3-03-arch-protocol-v2-compiler-pipeline",
+    "tier": "T3",
+    "description": "Refactor compiler into modular pass architecture supporting golden fixture diffing and token optimization.",
+    "files_touched": [
+      "sync.py",
+      ".autonomous-dev-team.toml",
+      "tests/test_sync.py"
+    ],
+    "expected_verification": "python3 sync.py --check && python3 -m unittest discover tests",
+    "risk_category": "architecture-multi-subsystem"
+  }
+]

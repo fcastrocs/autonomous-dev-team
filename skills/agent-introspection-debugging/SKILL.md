@@ -13,4 +13,4 @@ Use this skill when an agent repeats a failed action, reports state that conflic
 4. Repair through the existing routing contract. Send failures back to the original implementer with the command, error excerpt, changed files, and known-good facts.
 5. Stop after the repository's bounded repair cycles. Report the blocker instead of retrying blindly.
 
-Do not broaden permissions, inspect secrets, mutate unrelated files, or replace the diagnostician for an unknown-cause code failure.
+Do not broaden permissions, inspect secrets, mutate unrelated files, or replace root-cause diagnosis for an unknown-cause code failure.
